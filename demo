@@ -1,0 +1,74 @@
+
+# relay
+	local - local_relay - remote_relay - remote
+	
+	local_relay:  accept local ->read local -> connect remote_relay 
+		   async_read(local) -> encode ->async_write(remote_relay) -> head
+		   async_read(remote_relay) -> decode -> async_write(local)->head
+		   
+	remote_relay: accept local_relay -> read local_relay -> connect remote
+				async_read(local_relay) -> decode -> async_write(remote) ->head
+				async_read(remote) -> encode -> async_write(local_relay) -> head
+				
+				
+				
+# base relay:
+	raw_sock(no crypt), crypt_sock
+
+	read_raw { async_read(raw_sock, encode_and_write); }
+	read_crypt { async_read(crypt_sock, decode_and_write);}
+	encode_and_write:
+	{
+		encode;
+		async_write(crypt_sock, end);
+		read_raw();
+	}
+	decode_and_write:
+	{
+		decode;
+		async_write(raw_sock, end);
+		read_crypt();
+	}
+	start_relay:
+	{
+		read_raw();
+		read_crypt();
+	}
+# local:
+	accept(raw_sock, read_local);
+	local_con:
+	{
+	    sock.recv(256)
+		sock.send(b"\x05\x00")
+		data = sock.recv(4)
+		recv(addr)
+		connect(crypt_sock)
+		init();
+		encode(addr)
+		send(crypt_sock, addr);
+		start_relay();
+	}
+	init:
+	{ passwd;
+		key;
+	}
+	
+# remote:
+	accept(crypt_sock, read_local_relay)
+
+	read_local_relay:
+	{
+		init();
+		recv(crypt_sock, addr);
+		decode(addr);
+		raw_sock.connect(addr);
+		start_relay();
+
+	}
+
+	init :
+	{
+		passwd_check;
+		key_gen;
+	}
+	
