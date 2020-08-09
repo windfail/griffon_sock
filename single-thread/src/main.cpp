@@ -1,7 +1,9 @@
 #include <getopt.h>
 #include <cstdlib>
+#include <iostream>
+
 int server(int port);
-int client(int port);
+int client(int port, int cid);
 
 int main(int argc, char*argv[])
 {
@@ -21,13 +23,18 @@ int main(int argc, char*argv[])
 			break;
 
 		switch (cmd) {
-		case 1:
+		case 1: {
+			int cid = 0;
+			//std::cout << "cid" <<cid <<std::endl;
 			if (optarg) {
-				port = atoi(optarg);
+				cid = atoi(optarg);
+				//std::cout << optarg <<std::endl;
 			}
 
-			client(port);
+			client(port, cid);
 			break;
+		}
+
 		case 2:
 			if (optarg) {
 				port = atoi(optarg);

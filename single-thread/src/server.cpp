@@ -1,22 +1,27 @@
 #include <boost/asio.hpp>
 #include <memory>
-//#include <boost/bind.hpp>
+#include <iostream>
+
 using boost::asio::ip::tcp;
 
 class tcp_connection
+	:public std::enable_shared_from_this<tcp_connection>
 {
 public:
-	tcp_connection(boost::asio::io_context& io) : _sock(io) {}
+	tcp_connection(boost::asio::io_context& io) : _sock(io), _data() {}
+	~tcp_connection()  {std::cout << "destruct connection"<< std::endl;}
 	tcp::socket& get_sock()
 	{
 		return _sock;
 	}
-	static void start(std::shared_ptr<tcp_connection> this_ptr);
+	void start();
 
 
 private:
 	tcp::socket _sock;
-	static void handle_write(std::shared_ptr<tcp_connection> this_ptr);//std::shared_ptr<tcp_connection> );
+	std::string _data;
+
+	void handle_write(const boost::system::error_code& error, std::size_t bytes_transferred );
 };
 
 class tcp_server
@@ -32,22 +37,45 @@ private:
 	tcp::acceptor _acceptor;
 };
 
-
-
-void tcp_connection::handle_write(std::shared_ptr<tcp_connection> this_ptr)
+void tcp_connection::handle_write(const boost::system::error_code& error, std::size_t bytes_transferred )
 {
-//	boost::asio::async_read(*sock_ptr, boost::asio::buffer())
+	//std::cout<<"after read "<< bytes_transferred<<":" <<_data << std::endl;
+	if (error != boost::system::errc::success) {
+		std::cout << "read error occur " <<std::endl;
+		return;
+	}
+	_data.resize(bytes_transferred);
+	//std::istringstream in(_data);
+	int id;
+	std::string word;
+	std::istringstream(_data) >> word >> id;
+	std::cout << id << "doing..." <<std::endl;
+	sleep(id);
+
+	_data += " modified";
+	std::cout<< _data << std::endl;
+	auto wr_buf = boost::asio::buffer(_data);
+//	std::cout << "write buf:"<<wr_buf.data() << " size " <<wr_buf.size() << std::endl;
+	boost::asio::async_write(_sock, wr_buf,
+				 std::bind(&tcp_connection::start, shared_from_this()));
+
 }
-void tcp_connection::start(std::shared_ptr<tcp_connection> this_ptr)
+void tcp_connection::start()
 {
-	boost::asio::async_write(this_ptr->_sock, boost::asio::buffer("test function"),
-				 std::bind(&tcp_connection::handle_write, this_ptr));
+	//this_ptr->_data.clear();
+	_data.resize(128,0);
+
+	auto rd_buf = boost::asio::buffer(_data);
+	//std::cout <<"read buf:" << rd_buf.data() << " size " <<rd_buf.size() << std::endl;
+
+	_sock.async_read_some( rd_buf,
+			       std::bind(&tcp_connection::handle_write, shared_from_this(), std::placeholders::_1, std::placeholders::_2));
 
 }
 void tcp_server::handle_accept( std::shared_ptr<tcp_connection> sock_ptr, const boost::system::error_code& error)
 {
 	if (!error) {
-		sock_ptr->start(sock_ptr);
+		sock_ptr->start();
 	}
 
 	start_accept();
@@ -64,20 +92,9 @@ void tcp_server::start_accept()
 }
 int server(int port)
 {
-	//boost::asio::io_context io_context;
-	//tcp::acceptor acceptor(io_context);
 	tcp_server server(port);
 
-//	acceptor = tcp::acceptor(io_context, tcp::endpoint(tcp::v4(), port));
 	server.start_accept();
 	server.run();
-
-	// while(1) {
-	//	tcp::socket socket(io_context);
-	//	acceptor.accept(socket);
-
-	//	boost::system::error_code ignored_error;
-	//	boost::asio::write(socket, boost::asio::buffer("test fuction"), ignored_error);
-	// }
 	return 0;
 }
