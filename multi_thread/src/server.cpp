@@ -3,6 +3,8 @@
 #include <iostream>
 #include <vector>
 #include <thread>
+#include <chrono>
+#include <ctime>
 
 using boost::asio::ip::tcp;
 
@@ -12,7 +14,7 @@ class tcp_connection
 	:public std::enable_shared_from_this<tcp_connection>
 {
 public:
-	tcp_connection(boost::asio::io_context& io) : _sock(io), _data() {}
+	tcp_connection(boost::asio::io_context& io) : _sock(io), _data_r(), _data_w() {}
 	~tcp_connection()  {std::cout << "destruct connection"<< std::endl;}
 	tcp::socket& get_sock()
 	{
@@ -24,7 +26,8 @@ public:
 private:
 	//tcp::socket _sock;
 	tcp::socket _sock;
-	std::string _data;
+	std::string _data_r;
+	std::string _data_w;
 
 	void handle_write(const boost::system::error_code& error, std::size_t bytes_transferred );
 };
@@ -44,34 +47,42 @@ private:
 
 void tcp_connection::handle_write(const boost::system::error_code& error, std::size_t bytes_transferred )
 {
-	//std::cout<<"after read "<< bytes_transferred<<":" <<_data << std::endl;
+	std::cout<<"after read "<< bytes_transferred<<":" <<_data_r << std::endl;
+	std::time_t start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	std::cout << "start at" << std::ctime(&start_time) << std::endl;
 	if (error != boost::system::errc::success) {
 		std::cout << "read error occur " <<std::endl;
 		return;
 	}
-	_data.resize(bytes_transferred);
+	_data_r.resize(bytes_transferred);
+	std::string data = _data_r;
+	start();
 	//std::istringstream in(_data);
 	int id;
 	std::string word;
-	std::istringstream(_data) >> word >> id;
+	std::istringstream(data) >> word >> id;
 	std::cout << id << "doing..." <<std::endl;
 	sleep(id);
 	std::ostringstream mod;
 	mod << " mod by " <<std::this_thread::get_id();
-	_data += mod.str();
-	std::cout<< _data << std::endl;
-	auto wr_buf = boost::asio::buffer(_data);
+	data += mod.str();
+	std::cout<< data << std::endl;
+	std::time_t end = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+	std::cout << "end at" << std::ctime(&end) << std::endl;
+	_data_w = data;
+	auto wr_buf = boost::asio::buffer(_data_w);
 //	std::cout << "write buf:"<<wr_buf.data() << " size " <<wr_buf.size() << std::endl;
-	_sock.async_send(wr_buf,
-				 std::bind(&tcp_connection::start, shared_from_this()));
+	_sock.send(wr_buf);//,
+			//	 std::bind(&tcp_connection::start, shared_from_this()));
 
 }
 void tcp_connection::start()
 {
 	//this_ptr->_data.clear();
-	_data.resize(128,0);
+	_data_r.clear();
+	_data_r.resize(128,0);
 
-	auto rd_buf = boost::asio::buffer(_data);
+	auto rd_buf = boost::asio::buffer(_data_r);
 	//std::cout <<"read buf:" << rd_buf.data() << " size " <<rd_buf.size() << std::endl;
 
 	_sock.async_receive( rd_buf,

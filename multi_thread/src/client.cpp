@@ -23,6 +23,7 @@ int client(int port, int id)
 	out << "client "<<id;
 
 	std::string w_buf = out.str();
+	std::string w_nosleep = "client 0";
 	std::string r_buf(128,0);
 
 	for (int count = 0;; count++) {
@@ -30,6 +31,12 @@ int client(int port, int id)
 		show_time("write at ");
 
 //		std::cout << "count" << count <<":" << std::endl;
+		sleep(1);
+		socket.write_some(boost::asio::buffer(w_nosleep));
+		len = socket.read_some(boost::asio::buffer(r_buf));
+//		std::cout << "read:" <<len <<std::endl;
+		show_time("read at ");
+		std::cout << r_buf.substr(0,len) <<std::endl;
 		len = socket.read_some(boost::asio::buffer(r_buf));
 //		std::cout << "read:" <<len <<std::endl;
 		show_time("read at ");
