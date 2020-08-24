@@ -2,6 +2,7 @@
 #include <memory>
 #include <iostream>
 
+using boost::asio::ip::tcp;
 using boost::asio::generic::raw_protocol;
 
 typedef std::function<void(std::string&, std::string&)> crypt_handle;
@@ -19,32 +20,36 @@ public:
 	}
 };
 
-class base_relay
-	:public std::enable_shared_from_this<base_relay>
+class tcp_relay
+	:public std::enable_shared_from_this<tcp_relay>
 {
 public:
-	~base_relay()  {std::cout << "destruct relay object"<< std::endl;}
+	tcp_relay(boost::asio::io_context &io, 
+			std::shared_ptr<gri_crypt> crypt) :
+	       	_strand(io), _raw_sock(io), _crypt_sock(io), crypt_obj(crypt) {}
+	~tcp_relay()  {std::cout << "destruct relay object"<< std::endl;}
 	void start_relay();
 
 private:
 	typedef struct { std::string in; std::string out; } data_t;
 
-	raw_protocol::socket _raw_sock;
-	raw_protocol::socket _crypt_sock;
+	boost::asio::io_context::strand _strand;
+	tcp::socket _raw_sock;
+	tcp::socket _crypt_sock;
 	data_t _raw_data;
 	data_t _crypt_data;
 	std::shared_ptr<gri_crypt> crypt_obj;
 
-	void read_data(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w, data_t &data, const crypt_handle &crypt);
-	void send_data(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w,
+	void read_data(tcp::socket *sock_r, tcp::socket *sock_w, data_t &data, const crypt_handle &crypt);
+	void send_data(tcp::socket *sock_r, tcp::socket *sock_w,
 		       data_t &data, boost::asio::mutable_buffer w_buf, const crypt_handle &crypt,
 		       const boost::system::error_code& error, std::size_t len);
 
-	void handle_write(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w, data_t &data, const crypt_handle &crypt,
+	void handle_write(tcp::socket *sock_r, tcp::socket *sock_w, data_t &data, const crypt_handle &crypt,
 			  const boost::system::error_code &error, std::size_t len);
 	//void handle_write(const boost::system::error_code& error, std::size_t bytes_transferred );
 };
-void base_relay::handle_write(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w, data_t &data, const crypt_handle &crypt,
+void tcp_relay::handle_write(tcp::socket *sock_r, tcp::socket *sock_w, data_t &data, const crypt_handle &crypt,
 		const boost::system::error_code &error, std::size_t len)
 {
 	data.in.resize(len);
@@ -53,23 +58,24 @@ void base_relay::handle_write(raw_protocol::socket *sock_r, raw_protocol::socket
 	send_data(sock_r, sock_w, data, boost::asio::buffer(data.out), crypt,
 		  error, 0);
 }
-void base_relay::start_relay()
+void tcp_relay::start_relay()
 {
 	read_data(&_raw_sock, &_crypt_sock, _raw_data, crypt_obj->encrypt);
 	read_data(&_crypt_sock, &_raw_sock, _crypt_data, crypt_obj->decrypt);
 
 }
 
-void base_relay::read_data(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w, data_t &data, const crypt_handle &crypt)
+void tcp_relay::read_data(tcp::socket *sock_r, tcp::socket *sock_w, data_t &data, const crypt_handle &crypt)
 {
 	data.in.resize(128,0);
 	sock_r->async_receive(boost::asio::buffer(data.in),
-			     std::bind(&base_relay::handle_write,
+			boost::bind_executor(_strand,
+			     std::bind(&tcp_relay::handle_write,
 				       shared_from_this(),
 				       sock_r, sock_w, data, crypt,
-				       std::placeholders::_1, std::placeholders::_2));
+				       std::placeholders::_1, std::placeholders::_2)));
 }
-void base_relay::send_data(raw_protocol::socket *sock_r, raw_protocol::socket *sock_w,
+void tcp_relay::send_data(tcp::socket *sock_r, tcp::socket *sock_w,
 			   data_t &data, boost::asio::mutable_buffer w_buf, const crypt_handle &crypt,
 			   const boost::system::error_code& error, std::size_t len)
 {
@@ -78,10 +84,11 @@ void base_relay::send_data(raw_protocol::socket *sock_r, raw_protocol::socket *s
 	} else {
 		w_buf += len;
 		sock_w->async_send(w_buf,
-				   std::bind(&base_relay::send_data,
+				boost::bind_executor(_strand,
+				   std::bind(&tcp_relay::send_data,
 					     shared_from_this(),
 					     sock_r, sock_w, data, w_buf, crypt,
-					     std::placeholders::_1, std::placeholders::_2));
+					     std::placeholders::_1, std::placeholders::_2)));
 	}
 }
 
