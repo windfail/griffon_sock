@@ -16,9 +16,25 @@ set(CMAKE_CXX_STANDARD 14)
 
 # Add an executable with the above sources
 add_executable(${PROJECT_NAME} ${SOURCES})
-target_link_options(${PROJECT_NAME}
-  PRIVATE "-lboost_system"
-  PRIVATE "-pthread")
+#target_link_options(${PROJECT_NAME}
+#  PRIVATE "-lboost_system"
+#  PRIVATE "-pthread")
+
+# find a boost install with the libraries filesystem and system
+find_package(Boost 1.73 REQUIRED COMPONENTS system)
+
+# check if boost was found
+if(Boost_FOUND)
+    message ("boost found")
+else()
+    message (FATAL_ERROR "Cannot find Boost")
+endif()
+
+target_link_libraries( ${PROJECT_NAME}
+    PRIVATE
+	Boost::system
+	pthread
+)
 
 # Set the directories that should be included in the build command for this target
 # when running g++ these will be included as -I/directory/path/
