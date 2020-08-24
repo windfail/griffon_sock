@@ -14,7 +14,7 @@ class tcp_connection
 public:
 	tcp_connection(boost::asio::io_context& io) : _sock(io), _data() {}
 	~tcp_connection()  {std::cout << "destruct connection"<< std::endl;}
-	raw_protocol::socket& get_sock()
+	tcp::socket& get_sock()
 	{
 		return _sock;
 	}
@@ -23,7 +23,7 @@ public:
 
 private:
 	//tcp::socket _sock;
-	boost::asio::generic::raw_protocol::socket _sock;
+	tcp::socket _sock;
 	std::string _data;
 
 	void handle_write(const boost::system::error_code& error, std::size_t bytes_transferred );
@@ -56,8 +56,9 @@ void tcp_connection::handle_write(const boost::system::error_code& error, std::s
 	std::istringstream(_data) >> word >> id;
 	std::cout << id << "doing..." <<std::endl;
 	sleep(id);
-
-	_data += " modified";
+	std::ostringstream mod;
+	mod << " mod by " <<std::this_thread::get_id();
+	_data += mod.str();
 	std::cout<< _data << std::endl;
 	auto wr_buf = boost::asio::buffer(_data);
 //	std::cout << "write buf:"<<wr_buf.data() << " size " <<wr_buf.size() << std::endl;
