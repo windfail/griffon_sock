@@ -25,25 +25,25 @@ public:
 	tcp_relay(asio::io_context &io) :
 	       	_strand(io), _local_sock(io), _remote_sock(io)
 		{
-			_local_data.in.resize(READ_BUFFER_SIZE,0);
-			_remote_data.in.resize(READ_BUFFER_SIZE, 0);
+//			_local_data.in.resize(READ_BUFFER_SIZE,0);
+//			_remote_data.in.resize(READ_BUFFER_SIZE, 0);
 		}
 	~tcp_relay()  {BOOST_LOG_TRIVIAL(debug) << "destruct relay object";}
 	void start_relay();
 	tcp::socket & get_local_sock() {return _local_sock;}
 	tcp::socket & get_remote_sock() {return _remote_sock;}
 private:
-	typedef struct { std::string in; std::string out; } data_t;
+//	typedef struct { std::string in; std::string out; } data_t;
 
 	asio::io_context::strand _strand;
 	tcp::socket _local_sock;
 	tcp::socket _remote_sock;
-	data_t _local_data;
-	data_t _remote_data;
+	std::string _local_data;
+	std::string _remote_data;
 	void stop_relay();
-	void read_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data,
+	void read_data(tcp::socket &sock_r, tcp::socket &sock_w, std::string &data,
 		       const boost::system::error_code &error, std::size_t len);
-	void send_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data,
+	void send_data(tcp::socket &sock_r, tcp::socket &sock_w, std::string &data,
 		       const boost::system::error_code& error, std::size_t len);
 
 };
@@ -62,7 +62,7 @@ void tcp_relay::stop_relay()
 	_local_sock.close(err);
 	_remote_sock.close(err);
 }
-void tcp_relay::read_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data,
+void tcp_relay::read_data(tcp::socket &sock_r, tcp::socket &sock_w, std::string &data,
 		const boost::system::error_code &error, std::size_t len)
 {
 	if (error) {
@@ -70,19 +70,20 @@ void tcp_relay::read_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data
 		stop_relay();
 		return;
 	}
-	if (len != data.out.size()) {
-		BOOST_LOG_TRIVIAL(info) << "send len "<<len <<" not match buf len "<<data.out.size()<<std::endl;
+	if (len != data.size()) {
+		BOOST_LOG_TRIVIAL(info) << "send len "<<len <<" not match buf len "<<data.size()<<std::endl;
 		stop_relay();
 		return;
 	}
-	sock_r.async_receive(asio::buffer(data.in),
+	data.resize(READ_BUFFER_SIZE);
+	sock_r.async_receive(asio::buffer(data),
 			     asio::bind_executor(_strand,
 						 std::bind(&tcp_relay::send_data,
 							   shared_from_this(),
 							   std::ref(sock_r), std::ref(sock_w), std::ref(data),
 							   std::placeholders::_1, std::placeholders::_2)));
 }
-void tcp_relay::send_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data,
+void tcp_relay::send_data(tcp::socket &sock_r, tcp::socket &sock_w, std::string &data,
 			   const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
@@ -91,13 +92,13 @@ void tcp_relay::send_data(tcp::socket &sock_r, tcp::socket &sock_w, data_t &data
 		return;
 	}
 	if (len == 0) {
-		data.out.clear();
+		data.resize(0);
 		boost::system::error_code init_err;
 		read_data(sock_r, sock_w, data, init_err, 0);
 		return;
 	}
-	data.out = data.in.substr(0, len);
-	async_write(sock_w, asio::buffer(data.out),
+	data.resize(len);
+	async_write(sock_w, asio::buffer(data),
 		    asio::bind_executor(_strand,
 					std::bind(&tcp_relay::read_data,
 						  shared_from_this(),
