@@ -21,7 +21,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 #  PRIVATE "-pthread")
 
 # find a boost install with the libraries filesystem and system
-find_package(Boost 1.73 REQUIRED COMPONENTS system)
+find_package(Boost 1.71 REQUIRED COMPONENTS system)
 
 # check if boost was found
 if(Boost_FOUND)

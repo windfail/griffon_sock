@@ -22,12 +22,16 @@ void show_time(const std::string &info)
 int client(int port, int id)
 {
 	ssl::context ctx(ssl::context::tlsv12_client);
-	ctx.set_default_verify_paths();
+//	ctx.set_default_verify_paths();
+	ctx.load_verify_file("yily.crt");
+
+//	ctx.use_certificate_file("yily.crt", ssl::context::pem);
+//	ctx.use_rsa_private_key_file("key.pem", ssl::context::pem);
 
 	boost::asio::io_context io_context;
 	ssl_socket sock(io_context, ctx);
 
-	tcp::endpoint server_ep(boost::asio::ip::make_address("127.0.0.1"), port);
+	tcp::endpoint server_ep(boost::asio::ip::make_address("192.168.1.20"), port);
 
 	sock.lowest_layer().connect(server_ep);
 	sock.lowest_layer().set_option(tcp::no_delay(true));

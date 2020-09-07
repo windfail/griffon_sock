@@ -30,7 +30,12 @@ private:
 class tcp_server
 {
 public:
-	tcp_server(int port) : _io_context(), _ctx(ssl::context::tlsv12_server), _acceptor(_io_context, tcp::endpoint(tcp::v4(), port)) {}
+	tcp_server(int port) : _io_context(), _ctx(ssl::context::tlsv12_server), _acceptor(_io_context, tcp::endpoint(tcp::v4(), port)) {
+		_ctx.load_verify_file("yily.crt");
+		_ctx.use_certificate_file("yily.crt", ssl::context::pem);
+
+		_ctx.use_rsa_private_key_file("key.pem", ssl::context::pem);
+	}
 	void start_accept();
 	void handle_accept(std::shared_ptr<ssl_connection> sock_ptr, const boost::system::error_code& error);
 	void run() { _io_context.run(); }
