@@ -12,11 +12,12 @@ void show_time(const std::string &info)
 	std::cout << info << std::put_time(std::localtime(&t), "%c %Z") << '\n';
 
 }
-int client(int port, int id)
+int client(const std::string &server, int id)
 {
+	int port = 10230;
 	boost::asio::io_context io_context;
 	tcp::socket socket(io_context);
-	tcp::endpoint server_ep(boost::asio::ip::make_address("127.0.0.1"), port);
+	tcp::endpoint server_ep(boost::asio::ip::make_address(server), port);
 
 	socket.connect(server_ep);
 	std::ostringstream out;
