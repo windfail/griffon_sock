@@ -1,17 +1,10 @@
 #include "relay_server.hpp"
 
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/utility/setup/file.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-
-namespace logging = boost::log;
-namespace keywords = boost::log::keywords;
-
 void relay_server::local_handle_accept( std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error)
 {
 	local_start_accept();
 	if (error) {
+		BOOST_LOG_TRIVIAL(debug) <<" handle accept error "<<std::endl;
 		return;
 	}
 	try {

@@ -2,20 +2,29 @@
 #include <cstdlib>
 #include <iostream>
 
-int server(int port, int thread_num);
+int local_server(int l_port, int r_port, const std::string & r_ip, int thread_num);
+int remote_server(int port, int thread_num);
+
+const bool LOCAL = true;
+const bool REMOTE = false;
 
 int main(int argc, char*argv[])
 {
 	int cmd;
 	int port = 1080;
-	int thread_num = 0;
+	int thread_num = 10;
+	bool type = LOCAL;
+	std::string r_ip = "192.168.1.20";
+	int r_port = 10230;
 
 	while (1) {
 		int option_index = 0;
 		static struct option long_options[] = {
-			{"port",  required_argument,       0,  1 },
+			{"lport",  required_argument,       0,  1 },
 			{"thread",  required_argument,       0,  2 },
-
+			{"rport",  required_argument,       0,  3 },
+			{"rip",  required_argument,       0,  4 },
+			{"remote",  no_argument,       0,  5 },
 			{0,         0,                 0,  0 }
 		};
 
@@ -38,12 +47,25 @@ int main(int argc, char*argv[])
 				return -1;
 			}
 			break;
+		case 3:
+			r_port = atoi(optarg);
+			break;
+		case 4:
+			r_ip = optarg;
+			break;
+		case 5:
+			type = REMOTE;
+			break;
 
 		}
 
 	}
+	if (type == LOCAL) {
+		local_server(port, r_port, r_ip, thread_num);
 
-	server(port, thread_num);
+	} else {
+		remote_server(r_port, thread_num);
+	}
 
 	return 0;
 

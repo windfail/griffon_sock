@@ -4,16 +4,6 @@
 #include <vector>
 #include <thread>
 
-#include <boost/log/core.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/log/utility/setup/file.hpp>
-#include <boost/log/utility/setup/common_attributes.hpp>
-
-namespace logging = boost::log;
-namespace keywords = boost::log::keywords;
-
-
-
 void ssl_relay::start_relay()
 {
 	boost::system::error_code init_err;
@@ -56,7 +46,7 @@ void ssl_relay::send_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
 			   const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "on read error: "<<error.message()<<std::endl;
+		//BOOST_LOG_TRIVIAL(info) << "on read error: "<<error.message()<<std::endl;
 		stop_relay();
 		return;
 	}

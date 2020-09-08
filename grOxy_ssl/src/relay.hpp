@@ -5,6 +5,14 @@
 #include <boost/asio/ssl.hpp>
 #include <memory>
 
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/utility/setup/file.hpp>
+#include <boost/log/utility/setup/common_attributes.hpp>
+
+namespace logging = boost::log;
+namespace keywords = boost::log::keywords;
+
 namespace asio = boost::asio;
 namespace ip = boost::asio::ip;
 using boost::asio::ip::tcp;
@@ -19,8 +27,12 @@ class ssl_relay
 {
 public:
 	ssl_relay(asio::io_context &io, ssl::context &ctx) : _strand(io), _raw_sock(io), _ssl_sock(io, ctx)
-	{}
-	~ssl_relay()  {};
+	{
+		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
+	}
+	~ssl_relay()  {
+		BOOST_LOG_TRIVIAL(debug) << "ssl relay destruct";
+	};
 	void start_relay();
 	tcp::socket & get_raw_sock() {return _raw_sock;}
 	ssl_socket & get_ssl_sock() {return _ssl_sock;}
