@@ -8,6 +8,8 @@ project (netsock)
 
 # Create a sources variable with a link to all cpp files to compile
 set(SOURCES
+    src/relay.cpp
+    src/relay_server.cpp
     src/server.cpp
     src/main.cpp
 )
@@ -35,6 +37,8 @@ target_link_libraries( ${PROJECT_NAME}
 	Boost::log
 	Boost::system
 	pthread
+	ssl
+	crypto
 )
 
 # Set the directories that should be included in the build command for this target
