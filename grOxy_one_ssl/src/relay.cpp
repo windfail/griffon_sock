@@ -232,6 +232,61 @@ void raw_relay::local_start()
 					  std::placeholders::_1, std::placeholders::_2)));
 }
 
+// if stop cmd is from raw relay, send stop cmd to ssl
+void ssl_relay::stop_ssl_relay(uint32_t index, bool from_raw)
+{
+	if (index >= _relays.size()) {
+		// wrong index
+	}
+	_relays[index].reset();
+
+	if (!from_raw) {
+		return;
+	}
+	// send to ssl
+	auto buffer = std::make_shared<relay_data>(index, relay_data::STOP_RELAY);
+
+	async_write(_sock, buffer->buffers(),
+		    asio::bind_executor(_strand,
+					std::bind(&ssl_relay::on_write_ssl, this, buffer,
+						  std::placeholders::_1, std::placeholders::_2)));
+
+}
+
+void ssl_relay::ssl_data_relay(std::shared_ptr<relay_data> w_data)
+{
+
+	async_write(_sock, w_data->buffers(),
+		    asio::bind_executor(_strand,
+					std::bind(&ssl_relay::on_write_ssl, this, w_data,
+						  std::placeholders::_1, std::placeholders::_2)));
+
+}
+void ssl_relay::on_write_ssl(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len)
+{
+	if (error) {
+		BOOST_LOG_TRIVIAL(info) << "on ssl write error: "<<error.message();
+		stop_ssl_relay(w_data->index(), false);
+		return;
+	}
+	if (len != w_data->size()) {
+		BOOST_LOG_TRIVIAL(info) << "on ssl write error: "<<error.message();
+		stop_ssl_relay(w_data->index(), false);
+		return;
+	}
+
+}
+void ssl_relay::start_ssl_relay(int index)
+{
+	auto buffer = std::make_shared<relay_data>(index, relay_data::START_RELAY);
+
+	async_write(_sock, buffer->buffers(),
+		    asio::bind_executor(_strand,
+					std::bind(&ssl_relay::on_write_ssl, this, buffer,
+						  std::placeholders::_1, std::placeholders::_2)));
+
+}
+
 // call add_new_relay, vector access, must run in ssl_relay strand
 void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error)
 {
@@ -242,8 +297,10 @@ void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boos
 	}
 	int index = add_new_relay(relay);
 	// send start index cmd to ssl
-	auto task = std::bind(&raw_relay::local_start, relay);
+	auto task_ssl = std::bind(&ssl_relay::start_ssl_relay, this, index);
+	_strand.post(task_ssl, asio::get_associated_allocator(task_ssl));
 
+	auto task = std::bind(&raw_relay::local_start, relay);
 	relay->_strand.dispatch(task, asio::get_associated_allocator(task));
 
 	//relay->local_start();
@@ -258,7 +315,7 @@ void ssl_relay::local_start_accept()
 							     this, relay, std::placeholders::_1)));
 }
 
-int ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
+uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
 {
 	auto val = find(_relays.begin(), _relays.end(), nullptr);
 	if (val == _relays.end()) {

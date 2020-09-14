@@ -23,6 +23,49 @@ typedef ssl::stream<tcp::socket> ssl_socket;
 const int READ_BUFFER_SIZE = 4096;
 
 class ssl_relay;
+class relay_data
+{
+
+public:
+	enum command {
+		STOP_RELAY,
+		START_RELAY,
+		DATA_RELAY
+	};
+private:
+	struct _header_t {
+		uint32_t index;
+		command cmd;
+		_header_t(uint32_t index, command cmd) :index(index), cmd(cmd) {
+		}
+
+	};
+	_header_t _header;
+	std::string _data;
+
+public:
+
+	//	typedef struct {uint32_t index;command cmd; } _header_t;
+	relay_data(uint32_t index) :_data(READ_BUFFER_SIZE,0), _header(index, relay_data::DATA_RELAY) {
+	}
+	relay_data(uint32_t index, command cmd) : _data(), _header(index, cmd) {
+	}
+	auto buffers() {
+		return std::array<asio::mutable_buffer, 2> { asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
+	}
+	auto index() {
+		return _header.index;
+	}
+	void size(size_t data_len) {
+		_data.resize(data_len);
+	}
+	auto size() {
+		return _data.size() + sizeof(_header_t);
+	}
+private:
+
+
+};
 
 // raw relay , for client to local server and remote server to dest
 class raw_relay
@@ -71,6 +114,9 @@ public:
 
 //	ssl_socket & get_ssl_sock() {return _ssl_sock;}
 private:
+
+//	typedef struct {std::shared<_header_t> header; std::shared_ptr<std::string> data;} _data_t;
+
 //	typedef struct { std::shared_ptr<raw_relay> relay; } _relay_t;
 	asio::io_context _io_context;
 
@@ -79,10 +125,14 @@ private:
 	std::vector<std::shared_ptr<raw_relay>> _relays;
 
 	tcp::endpoint _remote;
-	int add_new_relay(const std::shared_ptr<raw_relay> &relay);
+	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
 
 //	void stop_relay();
+	void stop_ssl_relay(uint32_t index, bool from_raw);
 
+	void on_write_ssl(std::shared_ptr<relay_data> data, const boost::system::error_code& error, std::size_t len);
+	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
+	void start_ssl_relay(int index);
 
 	void local_start_accept();
 	void local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error);
