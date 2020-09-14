@@ -102,8 +102,9 @@ void ssl_relay::local_on_start(const boost::system::error_code& error, std::size
 		return;
 	}
 
-	uint8_t sock_ok[] = {5,0};
-	async_write(_raw_sock, asio::buffer(sock_ok),
+	_raw_data[0] = 5;
+	_raw_data[1] = 0;
+	async_write(_raw_sock, asio::buffer(_raw_data, 2),
 		    std::bind(&ssl_relay::local_start_ssl, shared_from_this(),
 			      std::placeholders::_1, std::placeholders::_2));
 
