@@ -32,6 +32,12 @@ public:
 		START_RELAY,
 		DATA_RELAY
 	};
+	enum stop_src {
+		from_ssl,
+		from_raw,
+		ssl_err
+	};
+
 private:
 	struct _header_t {
 		uint32_t index;
@@ -82,7 +88,6 @@ class raw_relay
 {
 public:
 
-	asio::io_context::strand _strand;
 
 	raw_relay(asio::io_context &io, const std::shared_ptr<ssl_relay> &manager) :
 		_index (0), _strand(io), _sock(io), _host_resolve(io), _manager(manager)
@@ -94,14 +99,20 @@ public:
 	tcp::socket & get_sock() {return _sock;}
 	auto index() {return _index;}
 	void index(uint32_t id) { _index = id;}
+	void stop_raw_relay(relay_data::stop_src);
+	asio::io_context::strand & get_strand() {
+		return _strand;
+	}
+
 private:
+	asio::io_context::strand _strand;
 	uint32_t _index;
 	tcp::socket _sock;
 	tcp::resolver _host_resolve;
 	std::shared_ptr<ssl_relay> _manager;
 	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
-	void start_relay(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
-	void stop_relay();
+	void start_data_relay(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+
 
 
 };
@@ -128,7 +139,9 @@ public:
 	asio::io_context::strand & get_strand() {
 		return _strand;
 	}
-	void stop_ssl_relay(uint32_t index, bool from_raw);
+	void stop_ssl_relay(uint32_t index, relay_data::stop_src src);
+	void send_data_on_ssl(std::shared_ptr<relay_data> buf);
+
 //	ssl_socket & get_ssl_sock() {return _ssl_sock;}
 private:
 
@@ -143,6 +156,7 @@ private:
 
 	tcp::endpoint _remote;
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
+	void ssl_stop_raw_relay(std::shared_ptr<raw_relay> &relay);
 
 //	void stop_relay();
 
@@ -153,16 +167,6 @@ private:
 
 	void local_start_accept();
 	void local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error);
-
-	// void local_on_start(const boost::system::error_code& error, std::size_t len);
-	// void local_start_ssl(const boost::system::error_code& error, std::size_t len);
-	// void on_ssl_connect(const boost::system::error_code& error);
-	// void start_relay(const boost::system::error_code &error, std::size_t len);
-
-	// void on_ssl_handshake(const boost::system::error_code& error);
-	// void on_read_sock5_cmd(const boost::system::error_code& error, std::size_t len);
-	// void on_remote_connect( const boost::system::error_code& error);
-
 
 
 };
