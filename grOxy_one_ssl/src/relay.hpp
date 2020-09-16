@@ -42,7 +42,8 @@ private:
 	struct _header_t {
 		uint32_t index;
 		command cmd;
-		_header_t(uint32_t index, command cmd) :index(index), cmd(cmd) {
+		size_t len;
+		_header_t(uint32_t index, command cmd, size_t len) :index(index), cmd(cmd), len(len) {
 		}
 
 	};
@@ -52,13 +53,17 @@ private:
 public:
 
 	//	typedef struct {uint32_t index;command cmd; } _header_t;
-	relay_data(uint32_t index) :_data(READ_BUFFER_SIZE,0), _header(index, relay_data::DATA_RELAY) {
+	relay_data(uint32_t index) :_data(READ_BUFFER_SIZE,0), _header(index, relay_data::DATA_RELAY, READ_BUFFER_SIZE) {
 	}
-	relay_data(uint32_t index, command cmd) : _data(), _header(index, cmd) {
+	relay_data(uint32_t index, command cmd) : _data(), _header(index, cmd, 0) {
 	}
 	std::string& data() {
 		return _data;
 	}
+	auto header_buffer() {
+		return asio::buffer(&_header, sizeof(_header_t));
+	}
+
 	auto data_buffer() {
 		return asio::buffer(_data);
 	}
@@ -71,8 +76,15 @@ public:
 	auto cmd() {
 		return _header.cmd;
 	}
+	void resize() {
+		_data.resize(_header.len);
+	}
 	void resize(size_t data_len) {
+		_header.len = data_len;
 		_data.resize(data_len);
+	}
+	auto header_size() {
+		return sizeof(_header_t);
 	}
 	auto size() {
 		return _data.size() + sizeof(_header_t);
@@ -95,7 +107,7 @@ public:
 		}
 
 	void local_start();
-	void local_on_start(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+
 	tcp::socket & get_sock() {return _sock;}
 	auto index() {return _index;}
 	void index(uint32_t id) { _index = id;}
@@ -103,6 +115,8 @@ public:
 	asio::io_context::strand & get_strand() {
 		return _strand;
 	}
+	void send_data_on_raw(std::shared_ptr<relay_data> buf);
+	void start_data_relay();
 
 private:
 	asio::io_context::strand _strand;
@@ -110,9 +124,13 @@ private:
 	tcp::socket _sock;
 	tcp::resolver _host_resolve;
 	std::shared_ptr<ssl_relay> _manager;
-	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
-	void start_data_relay(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+	void on_raw_send(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
+	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+
+	void on_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
+	void start_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
+	void local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
 
 
 };
@@ -141,6 +159,7 @@ public:
 	}
 	void stop_ssl_relay(uint32_t index, relay_data::stop_src src);
 	void send_data_on_ssl(std::shared_ptr<relay_data> buf);
+	void start_ssl_data_relay();
 
 //	ssl_socket & get_ssl_sock() {return _ssl_sock;}
 private:
@@ -157,6 +176,8 @@ private:
 	tcp::endpoint _remote;
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
 	void ssl_stop_raw_relay(std::shared_ptr<raw_relay> &relay);
+	void on_read_ssl_header(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len);
+	void on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
 //	void stop_relay();
 
