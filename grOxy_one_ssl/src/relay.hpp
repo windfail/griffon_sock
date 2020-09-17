@@ -23,6 +23,7 @@ typedef ssl::stream<tcp::socket> ssl_socket;
 const int READ_BUFFER_SIZE = 4096;
 
 class ssl_relay;
+
 class relay_data
 {
 
@@ -37,28 +38,30 @@ public:
 		from_raw,
 		ssl_err
 	};
-
-private:
 	struct _header_t {
-		uint32_t index;
+		uint32_t session;
 		command cmd;
 		size_t len;
-		_header_t(uint32_t index, command cmd, size_t len) :index(index), cmd(cmd), len(len) {
+		_header_t(uint32_t session, command cmd, size_t len) :session(session), cmd(cmd), len(len) {
 		}
-
 	};
+
+private:
 	_header_t _header;
 	std::string _data;
 
 public:
 
 	//	typedef struct {uint32_t index;command cmd; } _header_t;
-	relay_data(uint32_t index) :_data(READ_BUFFER_SIZE,0), _header(index, relay_data::DATA_RELAY, READ_BUFFER_SIZE) {
+	relay_data(uint32_t session) :_data(READ_BUFFER_SIZE,0), _header(session, relay_data::DATA_RELAY, READ_BUFFER_SIZE) {
 	}
-	relay_data(uint32_t index, command cmd) : _data(), _header(index, cmd, 0) {
+	relay_data(uint32_t session, command cmd) : _data(), _header(session, cmd, 0) {
 	}
 	std::string& data() {
 		return _data;
+	}
+	_header_t & head() {
+		return _header;
 	}
 	auto header_buffer() {
 		return asio::buffer(&_header, sizeof(_header_t));
@@ -70,12 +73,6 @@ public:
 	auto buffers() {
 		return std::array<asio::mutable_buffer, 2> { asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
 	}
-	auto index() {
-		return _header.index;
-	}
-	auto cmd() {
-		return _header.cmd;
-	}
 	void resize() {
 		_data.resize(_header.len);
 	}
@@ -85,6 +82,9 @@ public:
 	}
 	auto header_size() {
 		return sizeof(_header_t);
+	}
+	auto data_size() {
+		return _data.size();
 	}
 	auto size() {
 		return _data.size() + sizeof(_header_t);
@@ -102,15 +102,15 @@ public:
 
 
 	raw_relay(asio::io_context &io, const std::shared_ptr<ssl_relay> &manager) :
-		_index (0), _strand(io), _sock(io), _host_resolve(io), _manager(manager)
+		_session (0), _strand(io), _sock(io), _host_resolve(io), _manager(manager)
 		{
 		}
 
 	void local_start();
 
 	tcp::socket & get_sock() {return _sock;}
-	auto index() {return _index;}
-	void index(uint32_t id) { _index = id;}
+	auto session() {return _session;}
+	void session(uint32_t id) { _session = id;}
 	void stop_raw_relay(relay_data::stop_src);
 	asio::io_context::strand & get_strand() {
 		return _strand;
@@ -118,9 +118,13 @@ public:
 	void send_data_on_raw(std::shared_ptr<relay_data> buf);
 	void start_data_relay();
 
+	void start_remote_connect(std::shared_ptr<relay_data> buf);
+
 private:
 	asio::io_context::strand _strand;
-	uint32_t _index;
+
+	uint32_t _session;
+
 	tcp::socket _sock;
 	tcp::resolver _host_resolve;
 	std::shared_ptr<ssl_relay> _manager;
@@ -157,7 +161,7 @@ public:
 	asio::io_context::strand & get_strand() {
 		return _strand;
 	}
-	void stop_ssl_relay(uint32_t index, relay_data::stop_src src);
+	void stop_ssl_relay(uint32_t session, relay_data::stop_src src);
 	void send_data_on_ssl(std::shared_ptr<relay_data> buf);
 	void start_ssl_data_relay();
 
@@ -166,13 +170,14 @@ private:
 
 //	typedef struct {std::shared<_header_t> header; std::shared_ptr<std::string> data;} _data_t;
 
-//	typedef struct { std::shared_ptr<raw_relay> relay; } _relay_t;
+	typedef struct { std::shared_ptr<raw_relay> relay; int timeout; } _relay_t;
 	asio::io_context _io_context;
 	asio::io_context::strand _strand;
 	tcp::acceptor _acceptor;
 	ssl_socket  _sock;
-	std::vector<std::shared_ptr<raw_relay>> _relays;
-
+//	std::vector<std::shared_ptr<raw_relay>> _relays;
+	std::unorderedd_map<uint32_t, _relay_t> _relays;
+//	std::vector<_relay_t> _relays;
 	tcp::endpoint _remote;
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
 	void ssl_stop_raw_relay(std::shared_ptr<raw_relay> &relay);
@@ -184,7 +189,7 @@ private:
 
 	void on_write_ssl(std::shared_ptr<relay_data> data, const boost::system::error_code& error, std::size_t len);
 	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
-	void start_ssl_relay(int index);
+	void start_ssl_relay(int session);
 
 	void local_start_accept();
 	void local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error);
