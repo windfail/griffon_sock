@@ -145,80 +145,60 @@ void ssl_relay::remote_start()
 }
 #endif
 // ok begin
-void ssl_relay::ssl_stop_raw_relay(std::shared_ptr<raw_relay> &relay)
+ssl_relay::_relay_t::~_relay_t()
 {
-	if (!relay) {
+	if (relay->session() == 0) {
 		return;
 	}
 	auto stop_raw = std::bind(&raw_relay::stop_raw_relay, relay, relay_data::from_ssl);
 	relay->get_strand().dispatch(stop_raw, asio::get_associated_allocator(stop_raw));
-	relay.reset();
-
-	return;
 
 }
+
 // if stop cmd is from raw relay, send stop cmd to ssl
-void ssl_relay::stop_ssl_relay(uint32_t index, relay_data::stop_src src)
+void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 {
-	if (index >= _relays.size()) {
-		// wrong index
-	}
 	if (src == relay_data::ssl_err) {
 		// stop all raw_relay
-		for (auto & relay : _relays) {
-			ssl_stop_raw_relay(relay.relay);
-		}
+		_relays.clear();
+		return;
 	}
 
+	_relays.erase(session);
 	if (src == relay_data::from_raw) {
-		_relays[index].relay.reset();
 		// send to ssl
-		auto buffer = std::make_shared<relay_data>(index, relay_data::STOP_RELAY);
+		auto buffer = std::make_shared<relay_data>(session, relay_data::STOP_RELAY);
 		async_write(_sock, buffer->buffers(),
 			    asio::bind_executor(_strand,
 						std::bind(&ssl_relay::on_write_ssl, this, buffer,
 							  std::placeholders::_1, std::placeholders::_2)));
-
-	}
-	if (src == relay_data::from_ssl) {
-		ssl_stop_raw_relay(_relays[index].relay);
 	}
 }
 
-void ssl_relay::ssl_data_relay(std::shared_ptr<relay_data> w_data)
-{
-	async_write(_sock, w_data->buffers(),
-		    asio::bind_executor(_strand,
-					std::bind(&ssl_relay::on_write_ssl, this, w_data,
-						  std::placeholders::_1, std::placeholders::_2)));
-}
+// void ssl_relay::ssl_data_relay(std::shared_ptr<relay_data> w_data)
+// {
+// 	async_write(_sock, w_data->buffers(),
+// 		    asio::bind_executor(_strand,
+// 					std::bind(&ssl_relay::on_write_ssl, this, w_data,
+// 						  std::placeholders::_1, std::placeholders::_2)));
+// }
 void ssl_relay::on_write_ssl(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len)
 {
-	if (error) {
+	if (error
+	    || len != w_data->size()) {
 		BOOST_LOG_TRIVIAL(info) << "on ssl write error: "<<error.message();
-		stop_ssl_relay(w_data->head().index, relay_data::ssl_err);
-		return;
-	}
-	if (len != w_data->size()) {
-		BOOST_LOG_TRIVIAL(info) << "on ssl write error: "<<error.message();
-		stop_ssl_relay(w_data->head().index, relay_data::ssl_err);
+		BOOST_LOG_TRIVIAL(info) << "\tlen: "<<len << " data size "<<w_data->size();
+		stop_ssl_relay(w_data->head().session, relay_data::ssl_err);
 		return;
 	}
 
 }
 
-// send start cmd to remote to start index
-// void ssl_relay::start_ssl_relay(int index)
-// {
-//	auto buffer = std::make_shared<relay_data>(index, relay_data::START_RELAY);
 
-//	async_write(_sock, buffer->buffers(),
-//		    asio::bind_executor(_strand,
-//					std::bind(&ssl_relay::on_write_ssl, this, buffer,
-//						  std::placeholders::_1, std::placeholders::_2)));
-
-// }
-
+uint32_t new_session_id()
+{
+	return 0;
+}
 // call add_new_relay, vector access, must run in ssl_relay strand
 void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error)
 {
@@ -227,15 +207,11 @@ void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boos
 		BOOST_LOG_TRIVIAL(debug) <<" handle accept error "<<std::endl;
 		return;
 	}
-	int index = add_new_relay(relay);
-	// send start index cmd to ssl
-//	auto task_ssl = std::bind(&ssl_relay::start_ssl_relay, this, index);
-//	_strand.post(task_ssl, asio::get_associated_allocator(task_ssl));
+
+	add_new_relay(relay);
 
 	auto task = std::bind(&raw_relay::local_start, relay);
 	relay->get_strand().dispatch(task, asio::get_associated_allocator(task));
-
-	//relay->local_start();
 }
 void ssl_relay::local_start_accept()
 {
@@ -249,16 +225,14 @@ void ssl_relay::local_start_accept()
 
 uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
 {
-	auto val = find_if(_relays.begin(), _relays.end(), [](const _relay_t &tmp) { return tmp.session == 0; });
-	if (val == _relays.end()) {
-		relay->index( _relays.size());
-		_relays.push_back({60, relay, 60});
-	} else {
-		relay->index(val - _relays.begin());
-		*val = {60, relay, 60};
-	}
-	return relay->index();
+	uint32_t session = 0;
+	do {
+		session = new_session_id();
+	} while ( _relays.count(session) );
 
+	relay->session(session);
+	_relays.emplace(session, relay);
+	return session;
 }
 
 // send data on ssl sock
@@ -274,33 +248,35 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 
 void ssl_relay::on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len)
 {
-	if (error) {
+	if (error
+	    || len != buf->data_size()) {
 		BOOST_LOG_TRIVIAL(info) << "on read ssl data error: "<<error.message();
-		stop_ssl_relay(0, relay_data::ssl_err);
-		return;
-	}
-	if (len != buf->data_size()) {
 		BOOST_LOG_TRIVIAL(info) << "on read ssl data len "<< len <<" expect "<<buf->data().size();
 		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
-	auto index = buf->head().index;
+
+	auto session = buf->head().session;
 	switch ( buf->head().cmd) {
 	case relay_data::DATA_RELAY: {
-		if (index > _relays.size()) {
-			start_ssl_data_relay();
-			return;
+		auto val = _relays.find(session);
+
+		if (val == _relays.end()) {
+			// session stopped, 
+			stop_ssl_relay(session, relay_data::from_raw);
+
+		} else {
+			auto relay = val->second.relay;
+			auto raw_data_send = std::bind(&raw_relay::send_data_on_raw, relay, buf);
+			relay->get_strand().dispatch(raw_data_send, asio::get_associated_allocator(raw_data_send));
 		}
-		auto raw_data_send = std::bind(&raw_relay::send_data_on_raw, _relays[index].relay, buf);
-		_relays[index].relay->get_strand().dispatch(raw_data_send, asio::get_associated_allocator(raw_data_send));
 
 		break;
 	}
 	case relay_data::START_RELAY: {
 		// remote get start connect
 		auto relay = std::make_shared<raw_relay> (_io_context, shared_from_this());
-
-		int index = add_new_relay(relay);
+		_relays[session] = relay;
 		auto start_task = std::bind(&raw_relay::start_remote_connect, relay, buf);
 		relay->get_strand().dispatch(start_task, asio::get_associated_allocator(start_task));
 		break;
@@ -310,7 +286,7 @@ void ssl_relay::on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::s
 }
 void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len)
 {
-	auto index = buf->head().index;
+
 	if (error
 	    || len != sizeof(relay_data::_header_t)
 	    || buf->head().len > READ_BUFFER_SIZE) {
@@ -333,22 +309,25 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 		return;
 	}
 
-	if (index >= _relays.size()
-	    || session != _relays[index].session) {
-		// discard
-		start_ssl_data_relay();
-		return;
-	}
+
 	switch (buf->head().cmd) {
 	case relay_data::START_RELAY: {
-		// local get start from remote, tell raw relay begin
-		auto start_task = std::bind(&raw_relay::start_data_relay, _relays[index].relay);
-		_relays[index].relay->get_strand().dispatch(start_task, asio::get_associated_allocator(start_task));
+
+		auto val = _relays.find(session);
+		if (val == _relays.end() ) {
+			// local stopped before remote connect, tell remote to stop
+			stop_ssl_relay(session, relay_data::from_raw);
+		} else {
+			// local get start from remote, tell raw relay begin
+			auto relay = val->second.relay;
+			auto start_task = std::bind(&raw_relay::start_data_relay, relay);
+			relay->get_strand().dispatch(start_task, asio::get_associated_allocator(start_task));
+		}
 		break;
 	}
 	case relay_data::STOP_RELAY:
 		// dispatch stop to raw
-		stop_ssl_relay(index, relay_data::from_ssl);
+		_relays.erase(session);
 		break;
 	}
 	start_ssl_data_relay();

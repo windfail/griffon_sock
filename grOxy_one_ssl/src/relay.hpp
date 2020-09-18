@@ -4,7 +4,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <memory>
-
+#include <unordered_map>
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/file.hpp>
@@ -132,10 +132,13 @@ private:
 
 	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
-	void on_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
-	void start_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
+	void on_local_addr_ok(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
+
+//	void on_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
+	void start_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
 	void local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
 
+	void on_remote_connect(const boost::system::error_code& error);
 
 };
 
@@ -170,13 +173,23 @@ private:
 
 //	typedef struct {std::shared<_header_t> header; std::shared_ptr<std::string> data;} _data_t;
 
-	typedef struct { std::shared_ptr<raw_relay> relay; int timeout; } _relay_t;
+	class _relay_t {
+	public:
+		std::shared_ptr<raw_relay> relay;
+		int timeout;
+		_relay_t() :relay(nullptr), timeout(60) {
+		};
+
+		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay), timeout(60) {};
+
+		~_relay_t();
+	};
 	asio::io_context _io_context;
 	asio::io_context::strand _strand;
 	tcp::acceptor _acceptor;
 	ssl_socket  _sock;
 //	std::vector<std::shared_ptr<raw_relay>> _relays;
-	std::unorderedd_map<uint32_t, _relay_t> _relays;
+	std::unordered_map<uint32_t, _relay_t> _relays;
 //	std::vector<_relay_t> _relays;
 	tcp::endpoint _remote;
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);

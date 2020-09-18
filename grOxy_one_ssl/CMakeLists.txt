@@ -8,7 +8,8 @@ project (netsock)
 
 # Create a sources variable with a link to all cpp files to compile
 set(SOURCES
-    src/relay.cpp
+    src/ssl_relay.cpp
+    src/raw_relay.cpp
 #    src/relay_server.cpp
     src/server.cpp
     src/main.cpp
