@@ -1,14 +1,10 @@
 #include "relay_server.hpp"
 
-void relay_server::local_handle_accept( std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error)
+void relay_server::local_server_start( )
 {
-	local_start_accept();
-	if (error) {
-		BOOST_LOG_TRIVIAL(debug) <<" handle accept error "<<std::endl;
-		return;
-	}
+	auto server = std::make_shared<ssl_relay> (_io_context, _ctx, _remote, _lport);
+	server->local_start_accept();
 
-	sock_ptr->local_start();
 }
 
 
@@ -20,19 +16,19 @@ void relay_server::init_ssl()
 	_ctx.use_rsa_private_key_file("key.pem", ssl::context::pem);
 }
 
-void relay_server::remote_handle_accept(std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error)
+void relay_server::remote_handle_accept(std::shared_ptr<ssl_relay> ssl_ptr, const boost::system::error_code& error)
 {
-	remote_start_accept();
+	remote_server_start();
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "accept ssl connect error: "<<error.message()<<std::endl;
+		BOOST_LOG_TRIVIAL(info) << "accept ssl connect error: "<<error.message();
 		return;
 	}
 
-	sock_ptr->remote_start();
+	ssl_ptr->remote_ssl_start();
 }
-void relay_server::remote_start_accept()
+void relay_server::remote_server_start()
 {
-	auto sock_ptr = std::make_shared<ssl_relay> (_io_context, _ctx, _remote);
-	_acceptor.async_accept(sock_ptr->get_ssl_sock().lowest_layer(),
-			       std::bind(&relay_server::remote_handle_accept, this, sock_ptr, std::placeholders::_1));
+	auto ssl_ptr = std::make_shared<ssl_relay> (_io_context, _ctx);
+	_acceptor.async_accept(ssl_ptr->get_sock().lowest_layer(),
+			       std::bind(&relay_server::remote_handle_accept, this, ssl_ptr, std::placeholders::_1));
 }

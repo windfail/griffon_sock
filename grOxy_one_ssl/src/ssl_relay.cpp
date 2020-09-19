@@ -1,150 +1,7 @@
 #include "relay.hpp"
 
 #include <iostream>
-
-#if 0
-
-void ssl_relay::on_ssl_connect(const boost::system::error_code& error)
-{
-	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "on ssl connect error: "<<error.message();
-		stop_relay();
-		return;
-	}
-
-	_ssl_sock.lowest_layer().set_option(tcp::no_delay(true));
-	_ssl_sock.async_handshake(ssl_socket::client,
-				  asio::bind_executor(_strand,
-				  std::bind(&ssl_relay::start_relay, shared_from_this(),
-					    std::placeholders::_1, 0)));
-}
-void ssl_relay::local_start_ssl(const boost::system::error_code& error, std::size_t len)
-{
-	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "write init sock5 ack error: "<<error.message();
-		stop_relay();
-		return;
-	}
-
-	_ssl_sock.lowest_layer().async_connect(_remote,
-					       std::bind(&ssl_relay::on_ssl_connect, shared_from_this(),
-							 std::placeholders::_1));
-}
-
-void ssl_relay::on_remote_connect( const boost::system::error_code& error)
-{
-	if (error ) {
-		BOOST_LOG_TRIVIAL(info) << "remote connect error: "<<error.message();
-		stop_relay();
-		return;
-	}
-
-	uint8_t ret_val[] =  {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
-	std::copy(std::begin(ret_val), std::end(ret_val), _ssl_data.begin());
-	asio::async_write(_ssl_sock, asio::buffer(_ssl_data, 10),
-			  asio::bind_executor(_strand,
-			  std::bind(&ssl_relay::start_relay, shared_from_this(),
-				    std::placeholders::_1, std::placeholders::_2)));
-}
-
-void ssl_relay::on_read_sock5_cmd(const boost::system::error_code& error, std::size_t len)
-{
-	if (error || len <= 6 ||_ssl_data[1] != 1) {	// not connect cmd, error
-		BOOST_LOG_TRIVIAL(info) << "read sock5 cmd error: "<<error.message();
-		stop_relay();
-		return;
-	}
-
-	uint8_t *port = nullptr;
-	switch (_ssl_data[3]) {
-	case 1:{
-		ip::address_v4::bytes_type *addr_4 = (ip::address_v4::bytes_type *)(&_ssl_data[4]);
-		if (len < sizeof(*addr_4) + 6) {
-			BOOST_LOG_TRIVIAL(info) << "sock5 addr4 len error: ";
-			stop_relay();
-			return;
-		}
-		_remote.address(ip::make_address_v4(*addr_4));
-		port = (uint8_t*)&addr_4[1];
-		_remote.port(port[0]<<8 | port[1]);
-		_raw_sock.async_connect(_remote,
-				    std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
-					      std::placeholders::_1));
-		break;
-	}
-
-	case 4:
-	{
-		ip::address_v6::bytes_type *addr_6 = (ip::address_v6::bytes_type *)(&_ssl_data[4]);
-		if (len < sizeof(*addr_6) + 6) {
-			BOOST_LOG_TRIVIAL(info) << "sock5 addr6 len error: ";
-			stop_relay();
-			return;
-		}
-		_remote.address(ip::make_address_v6(*addr_6));
-		port = (uint8_t*)&addr_6[1];
-		_remote.port(port[0]<<8 | port[1]);
-		_raw_sock.async_connect(_remote,
-				    std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
-					      std::placeholders::_1));
-		break;
-
-	}
-	case 3: {
-		int host_len = _ssl_data[4];
-		if ( len < host_len + 1 +6) {
-			BOOST_LOG_TRIVIAL(info) << "sock5 host name len error: ";
-			stop_relay();
-			return;
-		}
-		std::string host_name = _ssl_data.substr(5, host_len);
-
-		port = (uint8_t*)&_ssl_data[host_len+1+4];
-
-		std::ostringstream port_name;
-		port_name << ((port[0]<<8)|port[1]);
-		BOOST_LOG_TRIVIAL(debug) << "host " <<host_name <<" port "<<port_name.str() ;
-		boost::system::error_code ec;
-		auto re_hosts = _host_resolve.resolve(host_name, port_name.str(), ec);
-		if (ec) {
-			BOOST_LOG_TRIVIAL(debug) << "host resolve error";
-			return;
-
-		}
-		asio::async_connect(_raw_sock, re_hosts,
-				    std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
-					      std::placeholders::_1));
-		break;
-	}
-
-	default:
-		BOOST_LOG_TRIVIAL(info) << "sock5 cmd type not support ";
-		break;
-	}
-}
-
-
-void ssl_relay::on_ssl_handshake(const boost::system::error_code& error)
-{
-	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "remote handshake error: "<<error.message();
-		stop_relay();
-		return;
-	}
-	_ssl_sock.async_read_some(asio::buffer(_ssl_data),
-				  std::bind(&ssl_relay::on_read_sock5_cmd, shared_from_this(),
-					    std::placeholders::_1, std::placeholders::_2));
-}
-
-void ssl_relay::remote_start()
-{
-	_ssl_sock.lowest_layer().set_option(tcp::no_delay(true));
-	_ssl_sock.async_handshake(ssl_socket::server,
-				  std::bind(&ssl_relay::on_ssl_handshake, shared_from_this(),
-					    std::placeholders::_1));
-}
-#endif
-// ok begin
+// ok begin common ssl relay functions
 ssl_relay::_relay_t::~_relay_t()
 {
 	if (relay->session() == 0) {
@@ -160,7 +17,13 @@ void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 {
 	if (src == relay_data::ssl_err) {
 		// stop all raw_relay
-		_relays.clear();
+		if (_started) {
+			_relays.clear();
+			boost::system::error_code err;
+			_sock.shutdown(err);
+			_sock.lowest_layer().close(err);
+			_started = false;
+		}
 		return;
 	}
 
@@ -170,18 +33,11 @@ void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 		auto buffer = std::make_shared<relay_data>(session, relay_data::STOP_RELAY);
 		async_write(_sock, buffer->buffers(),
 			    asio::bind_executor(_strand,
-						std::bind(&ssl_relay::on_write_ssl, this, buffer,
+						std::bind(&ssl_relay::on_write_ssl, shared_from_this(), buffer,
 							  std::placeholders::_1, std::placeholders::_2)));
 	}
 }
 
-// void ssl_relay::ssl_data_relay(std::shared_ptr<relay_data> w_data)
-// {
-// 	async_write(_sock, w_data->buffers(),
-// 		    asio::bind_executor(_strand,
-// 					std::bind(&ssl_relay::on_write_ssl, this, w_data,
-// 						  std::placeholders::_1, std::placeholders::_2)));
-// }
 void ssl_relay::on_write_ssl(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len)
 {
 	if (error
@@ -194,56 +50,17 @@ void ssl_relay::on_write_ssl(std::shared_ptr<relay_data> w_data, const boost::sy
 
 }
 
-
-uint32_t new_session_id()
-{
-	return 0;
-}
-// call add_new_relay, vector access, must run in ssl_relay strand
-void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error)
-{
-	local_start_accept();
-	if (error) {
-		BOOST_LOG_TRIVIAL(debug) <<" handle accept error "<<std::endl;
-		return;
-	}
-
-	add_new_relay(relay);
-
-	auto task = std::bind(&raw_relay::local_start, relay);
-	relay->get_strand().dispatch(task, asio::get_associated_allocator(task));
-}
-void ssl_relay::local_start_accept()
-{
-	auto relay = std::make_shared<raw_relay> (_io_context, shared_from_this());
-
-	_acceptor.async_accept(relay->get_sock(),
-			       asio::bind_executor(_strand,
-						   std::bind(&ssl_relay::local_handle_accept,
-							     this, relay, std::placeholders::_1)));
-}
-
-uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
-{
-	uint32_t session = 0;
-	do {
-		session = new_session_id();
-	} while ( _relays.count(session) );
-
-	relay->session(session);
-	_relays.emplace(session, relay);
-	return session;
-}
-
 // send data on ssl sock
 // buf is read from sock in raw_relay
 void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 {
+
 	async_write(_sock, buf->buffers(),
 		    asio::bind_executor(
 			    _strand,
-			    std::bind(&ssl_relay::on_write_ssl, this, buf,
+			    std::bind(&ssl_relay::on_write_ssl, shared_from_this(), buf,
 				      std::placeholders::_1, std::placeholders::_2)));
+
 }
 
 void ssl_relay::on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len)
@@ -304,7 +121,7 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 		async_read(_sock, buf->data_buffer(),
 			   asio::bind_executor(
 				   _strand,
-				   std::bind(&ssl_relay::on_read_ssl_data, this, buf,
+				   std::bind(&ssl_relay::on_read_ssl_data, shared_from_this(), buf,
 					     std::placeholders::_1, std::placeholders::_2)));
 		return;
 	}
@@ -341,6 +158,99 @@ void ssl_relay::start_ssl_data_relay()
 		buf->header_buffer(),
 		asio::bind_executor(
 			_strand,
-			std::bind(&ssl_relay::on_read_ssl_header, this, buf,
+			std::bind(&ssl_relay::on_read_ssl_header, shared_from_this(), buf,
 				  std::placeholders::_1, std::placeholders::_2)));
 }
+// remote ssl relay server functions
+void ssl_relay::on_ssl_handshake(const boost::system::error_code& error)
+{
+	if (error) {
+		BOOST_LOG_TRIVIAL(info) << "remote handshake error: "<<error.message();
+		stop_ssl_relay(0, relay_data::ssl_err);
+		return;
+	}
+	_started = true;
+	start_ssl_data_relay();
+}
+
+void ssl_relay::remote_ssl_start()
+{
+	_sock.lowest_layer().set_option(tcp::no_delay(true));
+	_sock.async_handshake(ssl_socket::server,
+			      std::bind(&ssl_relay::on_ssl_handshake, shared_from_this(),
+					std::placeholders::_1));
+
+}
+
+// local ssl relay server functions
+// call add_new_relay, vector access, must run in ssl_relay strand
+void ssl_relay::local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error)
+{
+	local_start_accept();
+	if (error) {
+		BOOST_LOG_TRIVIAL(debug) <<" handle accept error "<<std::endl;
+		return;
+	}
+
+	add_new_relay(relay);
+
+	auto task = std::bind(&raw_relay::local_start, relay);
+	relay->get_strand().dispatch(task, asio::get_associated_allocator(task));
+}
+void ssl_relay::local_start_accept()
+{
+	// accept raw relay
+	auto relay = std::make_shared<raw_relay> (_io_context, shared_from_this());
+	_acceptor.async_accept(relay->get_sock(),
+			       asio::bind_executor(_strand,
+						   std::bind(&ssl_relay::local_handle_accept,
+							     shared_from_this(), relay, std::placeholders::_1)));
+}
+
+uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
+{
+	uint32_t session = 0;
+	do {
+		auto ran = _rand();
+//		auto tmp = std::chrono::system_clock::now().time_since_epoch().count();
+		auto tmp = time(nullptr);
+
+		session = (ran & 0xffff0000) | (tmp & 0xffff);
+		BOOST_LOG_TRIVIAL(info) << " new session: "<<session;
+	} while ( _relays.count(session) );
+
+	relay->session(session);
+	_relays.emplace(session, relay);
+	return session;
+}
+
+void ssl_relay::start_new_relay(std::shared_ptr<relay_data> buf)
+{
+	if (_started) {
+		BOOST_LOG_TRIVIAL(info) << "ssl connected, start data send ";
+		send_data_on_ssl(buf);
+		return;
+	}
+	// connect ssl to remote
+	// here use sync call to block other connect, only on ssl connect need to be done
+	BOOST_LOG_TRIVIAL(info) << "start ssl connect : ";
+	_started = true;
+	boost::system::error_code error;
+	_sock.lowest_layer().connect(_remote, error);
+	if (error) {
+		BOOST_LOG_TRIVIAL(info) << "ssl connect error :" <<error.message();
+		stop_ssl_relay(0, relay_data::ssl_err);
+		return;
+	}
+	_sock.lowest_layer().set_option(tcp::no_delay(true));
+	_sock.handshake(ssl_socket::client, error);
+	if (error) {
+		BOOST_LOG_TRIVIAL(info) << "ssl handshake error :" <<error.message();
+		stop_ssl_relay(0, relay_data::ssl_err);
+		return;
+	}
+	send_data_on_ssl(buf);
+	start_ssl_data_relay();
+
+}
+

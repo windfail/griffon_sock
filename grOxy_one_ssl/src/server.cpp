@@ -3,13 +3,13 @@
 #include <iostream>
 #include <vector>
 #include <thread>
-
+//#include "relay.hpp"
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/file.hpp>
 #include <boost/log/utility/setup/common_attributes.hpp>
 
-//#include "relay_server.hpp"
+#include "relay_server.hpp"
 
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
@@ -33,21 +33,28 @@ static void init_log()
 	BOOST_LOG_TRIVIAL(error) << "An error severity message";
 	BOOST_LOG_TRIVIAL(fatal) << "A fatal severity message";
 }
+void init_ssl(ssl::context & _ctx)
+{
+	_ctx.load_verify_file("yily.crt");
+	_ctx.set_verify_mode(ssl::verify_peer|ssl::verify_fail_if_no_peer_cert);
+	_ctx.use_certificate_file("yily.crt", ssl::context::pem);
+	_ctx.use_rsa_private_key_file("key.pem", ssl::context::pem);
+}
 
 
 int local_server(int l_port, int r_port, const std::string & r_ip, int thread_num)
 {
 	init_log();
 
-	// relay_server l_server(l_port, r_port, r_ip);
-	// l_server.init_ssl();
-	// l_server.local_start_accept();
+	relay_server l_server(l_port, r_port, r_ip);
+	l_server.init_ssl();
+	l_server.local_server_start();
 
-	// std::vector<std::thread> server_th;
-	// for (int i = 1; i < thread_num-1; i++) {
-	// 	server_th.emplace_back([&](){ l_server.run();});
-	// }
-	// l_server.run();
+	std::vector<std::thread> server_th;
+	for (int i = 1; i < thread_num; i++) {
+		server_th.emplace_back([&](){ l_server.run();});
+	}
+	l_server.run();
 
 	return 0;
 }
@@ -55,16 +62,16 @@ int local_server(int l_port, int r_port, const std::string & r_ip, int thread_nu
 int remote_server(int port, int thread_num)
 {
 	init_log();
+	relay_server r_server(port);
+	r_server.init_ssl();
+	r_server.remote_server_start();
 
-	// relay_server r_server(port);
-	// r_server.init_ssl();
-	// r_server.remote_start_accept();
 
-	// std::vector<std::thread> server_th;
-	// for (int i = 1; i < thread_num-1; i++) {
-	// 	server_th.emplace_back([&](){ r_server.run();});
-	// }
-	// r_server.run();
+	std::vector<std::thread> server_th;
+	for (int i = 1; i < thread_num; i++) {
+		server_th.emplace_back([&](){ r_server.run();});
+	}
+	r_server.run();
 
 	return 0;
 

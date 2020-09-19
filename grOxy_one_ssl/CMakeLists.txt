@@ -10,7 +10,7 @@ project (netsock)
 set(SOURCES
     src/ssl_relay.cpp
     src/raw_relay.cpp
-#    src/relay_server.cpp
+    src/relay_server.cpp
     src/server.cpp
     src/main.cpp
 )

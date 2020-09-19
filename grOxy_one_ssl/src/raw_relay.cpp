@@ -69,11 +69,11 @@ void raw_relay::on_local_addr_ok(std::shared_ptr<std::string> buf, const boost::
 	}
 
 }
-// get sock5 connect cmd
-void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
+void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error || len < 6 || (*buf)[1] != 1 ) {
-		BOOST_LOG_TRIVIAL(info) << "start addr get error or len less than 6: "<<error.message();
+		BOOST_LOG_TRIVIAL(info) << "on addr get error : "<<error.message();
+		BOOST_LOG_TRIVIAL(info) << "\t len : "<<len << " cmd: "<< (*buf)[1];
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -93,7 +93,7 @@ void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boo
 		break;
 	}
 	if (len != rlen) {
-		BOOST_LOG_TRIVIAL(info) << "start addr get  len : "<< len<< " rlen "<< rlen;
+		BOOST_LOG_TRIVIAL(info) << "\t addr get  len : "<< len<< " rlen "<< rlen;
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -101,7 +101,7 @@ void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boo
 	auto buffer = std::make_shared<relay_data>(_session, relay_data::START_RELAY);
 	buffer->data() = buf->substr(3);
 	buffer->resize(buffer->data().size());
-	auto start_task = std::bind(&ssl_relay::send_data_on_ssl, _manager, buffer);
+	auto start_task = std::bind(&ssl_relay::start_new_relay, _manager, buffer);
 	_manager->get_strand().dispatch(start_task, asio::get_associated_allocator(start_task));
 
 	// send sock5 ok back
@@ -113,6 +113,21 @@ void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boo
 						  std::placeholders::_1, std::placeholders::_2)));
 
 }
+// get sock5 connect cmd
+void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
+{
+	if (error || len != 2) {
+		BOOST_LOG_TRIVIAL(info) << "write 0x5 0x0 error: "<<error.message();
+		BOOST_LOG_TRIVIAL(info) << "\twrite len: "<<len;
+		stop_raw_relay(relay_data::from_raw);
+		return;
+	}
+	_sock.async_read_some(asio::buffer(*buf),
+			     asio::bind_executor(_strand,
+						 std::bind(&raw_relay::on_local_addr_get, shared_from_this(), buf,
+								       std::placeholders::_1, std::placeholders::_2)));
+}
+
 void raw_relay::local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
@@ -210,6 +225,7 @@ void raw_relay::start_remote_connect(std::shared_ptr<relay_data> buf)
 		auto re_hosts = _host_resolve.resolve(host_name, port_name.str(), ec);
 		if (ec) {
 			BOOST_LOG_TRIVIAL(debug) << "host resolve error";
+			stop_raw_relay(relay_data::from_raw);
 			return;
 
 		}
