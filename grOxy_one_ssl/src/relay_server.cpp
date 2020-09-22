@@ -2,7 +2,7 @@
 
 void relay_server::local_server_start( )
 {
-	auto server = std::make_shared<ssl_relay> (_io_context, _ctx, _remote, _lport);
+	auto server = std::make_shared<ssl_relay> (&_io_context, _ctx, _remote, _lport);
 	server->local_start_accept();
 
 }
@@ -28,7 +28,7 @@ void relay_server::remote_handle_accept(std::shared_ptr<ssl_relay> ssl_ptr, cons
 }
 void relay_server::remote_server_start()
 {
-	auto ssl_ptr = std::make_shared<ssl_relay> (_io_context, _ctx);
+	auto ssl_ptr = std::make_shared<ssl_relay> (&_io_context, _ctx);
 	_acceptor.async_accept(ssl_ptr->get_sock().lowest_layer(),
 			       std::bind(&relay_server::remote_handle_accept, this, ssl_ptr, std::placeholders::_1));
 }

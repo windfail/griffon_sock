@@ -38,56 +38,61 @@ public:
 		from_raw,
 		ssl_err
 	};
+
 	struct _header_t {
-		uint32_t session;
-		command cmd;
-		size_t len;
-		_header_t(uint32_t session, command cmd, size_t len) :session(session), cmd(cmd), len(len) {
+		uint32_t _session;
+		command _cmd;
+		std::size_t _len;
+		_header_t(uint32_t session, command cmd, std::size_t len) :_session(session), _cmd(cmd), _len(len) {
 		}
 	};
-
 private:
 	_header_t _header;
-	std::string _data;
+	uint8_t _data[READ_BUFFER_SIZE];
 
 public:
+	relay_data(uint32_t session) :_header(session, DATA_RELAY, READ_BUFFER_SIZE) {
+	}
 
-	//	typedef struct {uint32_t index;command cmd; } _header_t;
-	relay_data(uint32_t session) :_data(READ_BUFFER_SIZE,0), _header(session, relay_data::DATA_RELAY, READ_BUFFER_SIZE) {
+	relay_data(uint32_t session, command cmd) : _header(session, cmd, 0) {
+
 	}
-	relay_data(uint32_t session, command cmd) : _data(), _header(session, cmd, 0) {
-	}
-	std::string& data() {
-		return _data;
-	}
+
 	_header_t & head() {
 		return _header;
 	}
+	auto session() {
+//		auto hd = (_header_t*)&_data[0];
+		return _header._session;
+	}
+	auto cmd() {
+//		auto hd = (_header_t*)&_data[0];
+		return _header._cmd;
+	}
+
 	auto header_buffer() {
 		return asio::buffer(&_header, sizeof(_header_t));
 	}
-
 	auto data_buffer() {
-		return asio::buffer(_data);
+		//return asio::buffer(&_data[sizeof(_header_t)], _header._len);
+		return asio::buffer(_data, _header._len);
 	}
 	auto buffers() {
-		return std::array<asio::mutable_buffer, 2> { asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
+		return asio::buffer(&_header, sizeof(_header_t)+_header._len);
+		//return std::array<asio::mutable_buffer, 2> { asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
 	}
-	void resize() {
-		_data.resize(_header.len);
-	}
-	void resize(size_t data_len) {
-		_header.len = data_len;
-		_data.resize(data_len);
+	void resize(std::size_t data_len) {
+		_header._len = data_len;
+//		_data.resize(data_len);
 	}
 	auto header_size() {
 		return sizeof(_header_t);
 	}
 	auto data_size() {
-		return _data.size();
+		return _header._len;
 	}
 	auto size() {
-		return _data.size() + sizeof(_header_t);
+		return _header._len + sizeof(_header_t);
 	}
 private:
 
@@ -101,8 +106,8 @@ class raw_relay
 public:
 
 
-	raw_relay(asio::io_context &io, const std::shared_ptr<ssl_relay> &manager) :
-		_session (0), _strand(io), _sock(io), _host_resolve(io), _manager(manager)
+	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager) :
+		_session (0), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager)
 		{
 		}
 
@@ -148,8 +153,8 @@ class ssl_relay
 public:
 
 	// remote ssl relay
-	ssl_relay(asio::io_context &io, ssl::context &ctx) :
-		_io_context(io), _strand(io), _sock(io, ctx),_acceptor(io),
+	ssl_relay(asio::io_context *io, ssl::context &ctx) :
+		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io),
 		_remote(), _started(false), _rand(std::random_device()())
 	{
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
@@ -158,8 +163,8 @@ public:
 	}
 
 	// local ssl relay
-	ssl_relay(asio::io_context &io, ssl::context &ctx, const tcp::endpoint &remote, int local_port) :
-		_io_context(io), _strand(io), _sock(io, ctx),_acceptor(io, tcp::endpoint(tcp::v4(), local_port)),
+	ssl_relay(asio::io_context *io, ssl::context &ctx, const tcp::endpoint &remote, int local_port) :
+		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io, tcp::endpoint(tcp::v4(), local_port)),
 		_remote(remote), _started(false),_rand(std::random_device()())
 	{
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
@@ -194,7 +199,7 @@ private:
 		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay), timeout(60) {};
 		~_relay_t();
 	};
-	asio::io_context & _io_context;
+	asio::io_context *_io_context;
 	bool _started;
 
 	asio::io_context::strand _strand;
