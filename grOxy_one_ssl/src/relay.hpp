@@ -5,6 +5,8 @@
 #include <boost/asio/ssl.hpp>
 #include <memory>
 #include <unordered_map>
+#include <queue>
+
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/file.hpp>
@@ -21,6 +23,8 @@ namespace ssl = boost::asio::ssl;
 typedef ssl::stream<tcp::socket> ssl_socket;
 
 const int READ_BUFFER_SIZE = 4096;
+const int TIMEOUT =  5;
+
 
 class ssl_relay;
 
@@ -78,8 +82,9 @@ public:
 		return asio::buffer(_data, _header._len);
 	}
 	auto buffers() {
-		return asio::buffer(&_header, sizeof(_header_t)+_header._len);
-		//return std::array<asio::mutable_buffer, 2> { asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
+		//return asio::buffer(&_header, sizeof(_header_t)+_header._len);
+		return std::array<asio::mutable_buffer, 2> { header_buffer(), data_buffer() };
+//asio::buffer(&_header, sizeof(_header_t)), asio::buffer(_data)} ;
 	}
 	void resize(std::size_t data_len) {
 		_header._len = data_len;
@@ -99,6 +104,11 @@ private:
 
 };
 
+// class base_relay
+//	:public std::enable_shared_from_this<base_relay>
+// {
+
+// }
 // raw relay , for client to local server and remote server to dest
 class raw_relay
 	:public std::enable_shared_from_this<raw_relay>
@@ -107,10 +117,13 @@ public:
 
 
 	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager) :
-		_session (0), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager)
+		_session (0), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
 		{
+			BOOST_LOG_TRIVIAL(info) << "raw relay construct: ";
 		}
-
+	~raw_relay() {
+		BOOST_LOG_TRIVIAL(info) << "raw relay destruct: "<<_session;
+	}
 	void local_start();
 
 	tcp::socket & get_sock() {return _sock;}
@@ -133,7 +146,11 @@ private:
 	tcp::socket _sock;
 	tcp::resolver _host_resolve;
 	std::shared_ptr<ssl_relay> _manager;
-	void on_raw_send(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+	std::queue<std::shared_ptr<relay_data>> _bufs; // buffers for write
+	bool _stopped = false;
+	tcp::socket _sock_remote;
+
+	void on_raw_send(/*std::shared_ptr<relay_data> buf, */const boost::system::error_code& error, std::size_t len);
 
 	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
@@ -155,7 +172,7 @@ public:
 	// remote ssl relay
 	ssl_relay(asio::io_context *io, ssl::context &ctx) :
 		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io),
-		_remote(), _started(false), _rand(std::random_device()())
+		_remote(), _timer(*io), _rand(std::random_device()())
 	{
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
 //		std::random_device rd;
@@ -165,7 +182,7 @@ public:
 	// local ssl relay
 	ssl_relay(asio::io_context *io, ssl::context &ctx, const tcp::endpoint &remote, int local_port) :
 		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io, tcp::endpoint(tcp::v4(), local_port)),
-		_remote(remote), _started(false),_rand(std::random_device()())
+		_remote(remote), _timer(*io),_rand(std::random_device()())
 	{
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
 	}
@@ -188,27 +205,30 @@ public:
 	void start_new_relay(std::shared_ptr<relay_data> buf);
 
 	void remote_ssl_start();
+	void timer_handle();
 
 private:
 	class _relay_t {
 	public:
 		std::shared_ptr<raw_relay> relay;
-		int timeout;
-		_relay_t() :relay(nullptr), timeout(60) {
+		int timeout {TIMEOUT};
+		_relay_t() {
 		};
-		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay), timeout(60) {};
+		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay) {};
 		~_relay_t();
 	};
 	asio::io_context *_io_context;
-	bool _started;
+	bool _started {false};
 
 	asio::io_context::strand _strand;
 	tcp::acceptor _acceptor;
 	ssl_socket  _sock;
 
 	std::unordered_map<uint32_t, _relay_t> _relays;
+	asio::steady_timer _timer;
 
 	tcp::endpoint _remote;	// remote ssl relay ep
+	std::queue<std::shared_ptr<relay_data>> _bufs; // buffers for write
 
 	// random
 	std::minstd_rand _rand;
@@ -216,7 +236,7 @@ private:
 	void on_read_ssl_header(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len);
 	void on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
-	void on_write_ssl(std::shared_ptr<relay_data> data, const boost::system::error_code& error, std::size_t len);
+	void on_write_ssl(/*std::shared_ptr<relay_data> data, */const boost::system::error_code& error, std::size_t len);
 	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
 
 	void local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error);

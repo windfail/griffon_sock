@@ -8,12 +8,13 @@ public:
 	// local_server constructor
 	relay_server(int local_port, int remote_port, const std::string &remote_ip):
 		_io_context(), _ctx(ssl::context::tlsv12_client), _lport(local_port),
-		_acceptor(_io_context), _remote(ip::make_address(remote_ip), remote_port) {
+		_acceptor(_io_context), _remote(ip::make_address(remote_ip), remote_port),_timer(_io_context) {
 								   }
 
 	// remote_server constructor
 	relay_server(int port):
-		_io_context(), _ctx(ssl::context::tlsv12_server), _acceptor(_io_context, tcp::endpoint(tcp::v4(), port)) {
+		_io_context(), _ctx(ssl::context::tlsv12_server),
+		_acceptor(_io_context, tcp::endpoint(tcp::v4(), port)) ,_timer(_io_context) {
 	}
 
 	void local_server_start();
@@ -30,8 +31,12 @@ private:
 	tcp::acceptor _acceptor;
 	ssl::context _ctx;
 	tcp::endpoint _remote;
+	asio::steady_timer _timer;
+	std::shared_ptr<ssl_relay> _ssl_server;
 
 	void remote_handle_accept(std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error);
+	void handle_timer(const boost::system::error_code& err);
+
 };
 
 #endif
