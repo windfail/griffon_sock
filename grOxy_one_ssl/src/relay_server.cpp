@@ -4,18 +4,20 @@ void relay_server::local_server_start( )
 {
 	_ssl_server = std::make_shared<ssl_relay> (&_io_context, _ctx, _remote, _lport);
 	_ssl_server->local_start_accept();
-	_timer.expires_after(std::chrono::minutes(1));
-	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
+	_ssl_server->gfw.load_list("rawgfwlist");
+
+//	_timer.expires_after(std::chrono::minutes(1));
+//	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
 
 }
 
 void relay_server::handle_timer(const boost::system::error_code& err)
 {
-	auto ssl_timer = std::bind(&ssl_relay::timer_handle, _ssl_server);
-	_ssl_server->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
+//	auto ssl_timer = std::bind(&ssl_relay::timer_handle, _ssl_server);
+//	_ssl_server->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
 
-	_timer.expires_after(std::chrono::minutes(1));
-	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
+//	_timer.expires_after(std::chrono::minutes(1));
+//	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
 }
 
 void relay_server::init_ssl()

@@ -28,13 +28,15 @@ void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 {
 	if (src == relay_data::ssl_err) {
 		// stop all raw_relay
-		if (_started) {
-			_relays.clear();
-			boost::system::error_code err;
-			_sock.shutdown(err);
-			_sock.lowest_layer().close(err);
-			_started = false;
-		}
+		_relays.clear();
+		_bufs = std::queue<std::shared_ptr<relay_data>> ();
+		boost::system::error_code err;
+//		if (_started) {
+		_sock.shutdown(err);
+		_started = false;
+//		}
+		_sock.lowest_layer().shutdown(tcp::socket::shutdown_both, err);
+		_sock.lowest_layer().close(err);
 		return;
 	}
 
@@ -87,6 +89,11 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 
 	_bufs.push(buf);
 	if (_bufs.size() > 1) {
+		return;
+	}
+	if (!_started) {
+		// start ssl connect
+		start_ssl_connect();
 		return;
 	}
 	async_write(_sock, buf->buffers(),
@@ -268,38 +275,47 @@ uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
 	_relays.emplace(session, relay);
 	return session;
 }
-
-void ssl_relay::start_new_relay(std::shared_ptr<relay_data> buf)
+void ssl_relay::local_ssl_handshake(const boost::system::error_code& error)
 {
-	if (_started) {
-		BOOST_LOG_TRIVIAL(info) << "ssl connected, start data send ";
-		send_data_on_ssl(buf);
+	if (error) {
+		BOOST_LOG_TRIVIAL(info) << "start ssl connect handshake error :" <<error.message();
+		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
-	// connect ssl to remote
-	// here use sync call to block other connect, only on ssl connect need to be done
-	_bufs = std::queue<std::shared_ptr<relay_data>> ();
-
-	BOOST_LOG_TRIVIAL(info) << "start ssl connect : ";
 	_started = true;
-	boost::system::error_code error;
-	_sock.lowest_layer().connect(_remote, error);
+	auto buf = _bufs.front();
+	async_write(_sock, buf->buffers(),
+		    asio::bind_executor(
+			    _strand,
+			    std::bind(&ssl_relay::on_write_ssl, shared_from_this(),
+				      std::placeholders::_1, std::placeholders::_2)));
+
+	start_ssl_data_relay();
+}
+void ssl_relay::on_ssl_connect(const boost::system::error_code& error)
+{
 	if (error) {
 		BOOST_LOG_TRIVIAL(info) << "start ssl connect error :" <<error.message();
 		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
 	_sock.lowest_layer().set_option(tcp::no_delay(true));
-	_sock.handshake(ssl_socket::client, error);
-	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "start ssl connect handshake error :" <<error.message();
-		stop_ssl_relay(0, relay_data::ssl_err);
-		return;
-	}
-	BOOST_LOG_TRIVIAL(info) << "start ssl connect OK :" ;
+	BOOST_LOG_TRIVIAL(info) << "start ssl handshake :" ;
+	_sock.async_handshake(ssl_socket::client,
+			      asio::bind_executor(_strand,
+						  std::bind(&ssl_relay::local_ssl_handshake, shared_from_this(),
+							    std::placeholders::_1)));
 
-	send_data_on_ssl(buf);
-	start_ssl_data_relay();
+
+}
+void ssl_relay::start_ssl_connect()
+{
+	BOOST_LOG_TRIVIAL(info) << "start ssl connect : ";
+	_sock.lowest_layer().async_connect(
+		_remote,
+		asio::bind_executor(_strand,
+				    std::bind(&ssl_relay::on_ssl_connect, shared_from_this(),
+					      std::placeholders::_1)));
 
 }
 

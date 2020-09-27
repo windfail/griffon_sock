@@ -6,7 +6,7 @@
 #include <memory>
 #include <unordered_map>
 #include <queue>
-
+#include "gfwlist.hpp"
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/file.hpp>
@@ -114,8 +114,6 @@ class raw_relay
 	:public std::enable_shared_from_this<raw_relay>
 {
 public:
-
-
 	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager) :
 		_session (0), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
 		{
@@ -149,7 +147,8 @@ private:
 	std::queue<std::shared_ptr<relay_data>> _bufs; // buffers for write
 	bool _stopped = false;
 	tcp::socket _sock_remote;
-
+	std::string local_buf;
+	std::string remote_buf;
 	void on_raw_send(/*std::shared_ptr<relay_data> buf, */const boost::system::error_code& error, std::size_t len);
 
 	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
@@ -160,6 +159,11 @@ private:
 	void local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
 
 	void on_remote_connect(const boost::system::error_code& error);
+
+	void local_on_remote_connect(const boost::system::error_code& error);
+	void nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf);
+	void on_nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len);
+	void on_nogfw_write(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len);
 
 };
 
@@ -202,10 +206,10 @@ public:
 	ssl_socket & get_sock() {return _sock;}
 
 	void local_start_accept();
-	void start_new_relay(std::shared_ptr<relay_data> buf);
 
 	void remote_ssl_start();
 	void timer_handle();
+	gfw_list gfw;
 
 private:
 	class _relay_t {
@@ -244,6 +248,10 @@ private:
 
 	// remote
 	void on_ssl_handshake(const boost::system::error_code& error);
+
+	void on_ssl_connect(const boost::system::error_code& error);
+	void local_ssl_handshake(const boost::system::error_code& error);
+	void start_ssl_connect();
 
 };
 
