@@ -44,3 +44,14 @@ void relay_server::remote_server_start()
 	_acceptor.async_accept(ssl_ptr->get_sock().lowest_layer(),
 			       std::bind(&relay_server::remote_handle_accept, this, ssl_ptr, std::placeholders::_1));
 }
+
+void relay_server::run()
+{
+	try {
+		_io_context.run();
+	} catch (std::exception & e) {
+		BOOST_LOG_TRIVIAL(info) << "server run error: "<<e.what();
+	} catch (...) {
+		BOOST_LOG_TRIVIAL(info) << "server run error with unkown exception ";
+	}
+}
