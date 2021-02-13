@@ -17,7 +17,6 @@ public:
 
 	void local_start_accept();
 	void local_handle_accept( std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error);
-
 	void remote_start_accept();
 	void remote_handle_accept(std::shared_ptr<ssl_relay> sock_ptr, const boost::system::error_code& error);
 	void run() { _io_context.run(); }

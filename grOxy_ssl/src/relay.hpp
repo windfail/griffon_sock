@@ -53,10 +53,10 @@ private:
 	tcp::resolver _host_resolve;
 
 	void stop_relay();
-  template <typename SOCK_R, typename SOCK_W>
+	template <typename SOCK_R, typename SOCK_W>
 	void read_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
 		       const boost::system::error_code &error, std::size_t len);
-  template <typename SOCK_R, typename SOCK_W>
+	template <typename SOCK_R, typename SOCK_W>
 	void send_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
 		       const boost::system::error_code& error, std::size_t len);
 

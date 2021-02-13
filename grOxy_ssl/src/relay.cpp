@@ -25,7 +25,7 @@ void ssl_relay::stop_relay()
 }
 template <typename SOCK_R, typename SOCK_W>
 void ssl_relay::read_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
-		const boost::system::error_code &error, std::size_t len)
+			  const boost::system::error_code &error, std::size_t len)
 {
 	if (error) {
 		BOOST_LOG_TRIVIAL(info) << "on write error: "<<error.message();
@@ -39,15 +39,15 @@ void ssl_relay::read_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
 	}
 	data.resize(READ_BUFFER_SIZE);
 	sock_r.async_read_some(asio::buffer(data),
-			     asio::bind_executor(_strand,
-						 std::bind(&ssl_relay::send_data<SOCK_R,SOCK_W>,
-							   shared_from_this(),
-							   std::ref(sock_r), std::ref(sock_w), std::ref(data),
-							   std::placeholders::_1, std::placeholders::_2)));
+			       asio::bind_executor(_strand,
+						   std::bind(&ssl_relay::send_data<SOCK_R,SOCK_W>,
+							     shared_from_this(),
+							     std::ref(sock_r), std::ref(sock_w), std::ref(data),
+							     std::placeholders::_1, std::placeholders::_2)));
 }
 template <typename SOCK_R, typename SOCK_W>
 void ssl_relay::send_data(SOCK_R &sock_r, SOCK_W &sock_w, std::string &data,
-			   const boost::system::error_code& error, std::size_t len)
+			  const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
 		BOOST_LOG_TRIVIAL(info) << "on read error: "<<error.message();
@@ -79,8 +79,8 @@ void ssl_relay::on_ssl_connect(const boost::system::error_code& error)
 	_ssl_sock.lowest_layer().set_option(tcp::no_delay(true));
 	_ssl_sock.async_handshake(ssl_socket::client,
 				  asio::bind_executor(_strand,
-				  std::bind(&ssl_relay::start_relay, shared_from_this(),
-					    std::placeholders::_1, 0)));
+						      std::bind(&ssl_relay::start_relay, shared_from_this(),
+								std::placeholders::_1, 0)));
 }
 void ssl_relay::local_start_ssl(const boost::system::error_code& error, std::size_t len)
 {
@@ -128,8 +128,8 @@ void ssl_relay::on_remote_connect( const boost::system::error_code& error)
 	std::copy(std::begin(ret_val), std::end(ret_val), _ssl_data.begin());
 	asio::async_write(_ssl_sock, asio::buffer(_ssl_data, 10),
 			  asio::bind_executor(_strand,
-			  std::bind(&ssl_relay::start_relay, shared_from_this(),
-				    std::placeholders::_1, std::placeholders::_2)));
+					      std::bind(&ssl_relay::start_relay, shared_from_this(),
+							std::placeholders::_1, std::placeholders::_2)));
 }
 
 void ssl_relay::on_read_sock5_cmd(const boost::system::error_code& error, std::size_t len)
@@ -153,8 +153,8 @@ void ssl_relay::on_read_sock5_cmd(const boost::system::error_code& error, std::s
 		port = (uint8_t*)&addr_4[1];
 		_remote.port(port[0]<<8 | port[1]);
 		_raw_sock.async_connect(_remote,
-				    std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
-					      std::placeholders::_1));
+					std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
+						  std::placeholders::_1));
 		break;
 	}
 
@@ -170,8 +170,8 @@ void ssl_relay::on_read_sock5_cmd(const boost::system::error_code& error, std::s
 		port = (uint8_t*)&addr_6[1];
 		_remote.port(port[0]<<8 | port[1]);
 		_raw_sock.async_connect(_remote,
-				    std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
-					      std::placeholders::_1));
+					std::bind(&ssl_relay::on_remote_connect, shared_from_this(),
+						  std::placeholders::_1));
 		break;
 
 	}
