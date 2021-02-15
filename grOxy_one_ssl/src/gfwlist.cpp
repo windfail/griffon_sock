@@ -93,6 +93,8 @@ int gfw_list::add_host(const std::string & host)
 }
 bool gfw_list::is_blocked(const std::string & host)
 {
+	return true;
+
 //	return _hosts.end() == _hosts.find(host);
 //#if USE_VECTOR
 // 	if (_whites.end() != std::find(_whites.begin(), _whites.end(), host)) {

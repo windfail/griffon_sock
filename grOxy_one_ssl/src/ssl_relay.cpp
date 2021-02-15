@@ -4,6 +4,16 @@
 // ok begin common ssl relay functions
 std::string buf_to_string(void *buf, std::size_t size);
 
+class ssl_relay::_relay_t {
+public:
+	std::shared_ptr<raw_relay> relay;
+	int timeout {TIMEOUT};
+	_relay_t() {
+	};
+	_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay) {};
+	~_relay_t();
+};
+
 ssl_relay::_relay_t::~_relay_t()
 {
 	if (relay->session() == 0) {
@@ -17,7 +27,7 @@ void ssl_relay::timer_handle()
 {
 	BOOST_LOG_TRIVIAL(info) << " ssl relay timer handle : ";
 	for (auto & rel : _relays) {
-		if (--rel.second.timeout == 0) {
+		if (--rel.second->timeout == 0) {
 			BOOST_LOG_TRIVIAL(info) << " timeout stop : "<<rel.first;
 			_relays.erase(rel.first);
 		}
@@ -85,7 +95,7 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 	if (relay == _relays.end()) {
 		return;
 	}
-	relay->second.timeout = TIMEOUT;
+	relay->second->timeout = TIMEOUT;
 
 	_bufs.push(buf);
 	if (_bufs.size() > 1) {
@@ -125,18 +135,18 @@ void ssl_relay::on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::s
 //			stop_ssl_relay(session, relay_data::from_raw);
 
 		} else {
-			val->second.timeout = TIMEOUT;
-			auto relay = val->second.relay;
+			val->second->timeout = TIMEOUT;
+			auto relay = val->second->relay;
 			auto raw_data_send = std::bind(&raw_relay::send_data_on_raw, relay, buf);
 			relay->get_strand().post(raw_data_send, asio::get_associated_allocator(raw_data_send));
 		}
 
 		break;
 	}
-	case relay_data::START_RELAY: {
+	case relay_data::START_CONNECT: {
 		// remote get start connect
 		auto relay = std::make_shared<raw_relay> (_io_context, shared_from_this());
-		_relays[session] = relay;
+		_relays[session] = std::make_shared<ssl_relay::_relay_t>(relay);
 		relay->session(session);
 		BOOST_LOG_TRIVIAL(info) << " raw relay construct new session: "<<session;
 		auto start_task = std::bind(&raw_relay::start_remote_connect, relay, buf);
@@ -175,27 +185,21 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 //		BOOST_LOG_TRIVIAL(info) << "end of start data read: ";
 		return;
 	}
-
-
-	switch (buf->cmd()) {
-	case relay_data::START_RELAY: {
-
+// data size == 0
+	if (buf->cmd() == relay_data::START_RELAY) {
 		auto val = _relays.find(session);
 		if (val == _relays.end() ) {
 			// local stopped before remote connect, tell remote to stop
 			stop_ssl_relay(session, relay_data::from_raw);
 		} else {
 			// local get start from remote, tell raw relay begin
-			auto relay = val->second.relay;
+			auto relay = val->second->relay;
 			auto start_task = std::bind(&raw_relay::start_data_relay, relay);
 			relay->get_strand().post(start_task, asio::get_associated_allocator(start_task));
 		}
-		break;
-	}
-	case relay_data::STOP_RELAY:
+	} else if (buf->cmd() == relay_data::STOP_RELAY) {
 		// post stop to raw
 		_relays.erase(session);
-		break;
 	}
 	start_ssl_data_relay();
 }
@@ -272,7 +276,7 @@ uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
 	} while ( _relays.count(session) );
 
 	relay->session(session);
-	_relays.emplace(session, relay);
+	_relays.emplace(session, std::make_shared<_relay_t>(relay));
 	return session;
 }
 void ssl_relay::local_ssl_handshake(const boost::system::error_code& error)
@@ -282,6 +286,7 @@ void ssl_relay::local_ssl_handshake(const boost::system::error_code& error)
 		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
+	BOOST_LOG_TRIVIAL(info) << "ssl handshake ok" ;
 	_started = true;
 	auto buf = _bufs.front();
 	async_write(_sock, buf->buffers(),

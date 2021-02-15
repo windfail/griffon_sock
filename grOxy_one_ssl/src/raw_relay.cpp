@@ -264,7 +264,7 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 	}
 	if (block) {
 		// send start cmd to ssl
-		auto buffer = std::make_shared<relay_data>(_session, relay_data::START_RELAY);
+		auto buffer = std::make_shared<relay_data>(_session, relay_data::START_CONNECT);
 		std::copy_n(data, len -3, (uint8_t*)buffer->data_buffer().data());
 //	BOOST_LOG_TRIVIAL(info) << " send start remote data: \n" << buf_to_string(buffer->data_buffer().data(), buffer->data_buffer().size());
 		buffer->resize(len -3);
@@ -338,6 +338,8 @@ void raw_relay::on_remote_connect(const boost::system::error_code& error)
 	// start raw data relay
 	start_data_relay();
 }
+
+// remote raw_relay: connect to remote site
 void raw_relay::start_remote_connect(std::shared_ptr<relay_data> buf)
 {
 	auto data = (uint8_t*) buf->data_buffer().data();

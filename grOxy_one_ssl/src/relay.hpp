@@ -34,6 +34,7 @@ class relay_data
 public:
 	enum command {
 		STOP_RELAY,
+		START_CONNECT,
 		START_RELAY,
 		DATA_RELAY
 	};
@@ -212,15 +213,16 @@ public:
 	gfw_list gfw;
 
 private:
-	class _relay_t {
-	public:
-		std::shared_ptr<raw_relay> relay;
-		int timeout {TIMEOUT};
-		_relay_t() {
-		};
-		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay) {};
-		~_relay_t();
-	};
+	class _relay_t;
+ // {
+ //	public:
+ //		std::shared_ptr<raw_relay> relay;
+ //		int timeout {TIMEOUT};
+ //		_relay_t() {
+ //		};
+ //		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay) {};
+ //		~_relay_t();
+ //	};
 	asio::io_context *_io_context;
 	bool _started {false};
 
@@ -228,7 +230,7 @@ private:
 	tcp::acceptor _acceptor;
 	ssl_socket  _sock;
 
-	std::unordered_map<uint32_t, _relay_t> _relays;
+	std::unordered_map<uint32_t, std::shared_ptr<_relay_t>> _relays;
 	asio::steady_timer _timer;
 
 	tcp::endpoint _remote;	// remote ssl relay ep
