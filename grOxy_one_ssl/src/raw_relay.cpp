@@ -23,7 +23,7 @@ static int parse_addr4(tcp::endpoint &remote, uint8_t* data, std::size_t len)
 {
 	ip::address_v4::bytes_type *addr_4 = (ip::address_v4::bytes_type *)data;
 	if (len < sizeof(*addr_4) + 2) {
-		BOOST_LOG_TRIVIAL(info) << "sock5 addr4 len error: "<< len;
+		BOOST_LOG_TRIVIAL(error) << "sock5 addr4 len error: "<< len;
 		return -1;
 	}
 	remote.address(ip::make_address_v4(*addr_4));
@@ -36,7 +36,7 @@ static int parse_addr6(tcp::endpoint &remote, uint8_t* data, std::size_t len)
 {
 	ip::address_v6::bytes_type *addr_6 = (ip::address_v6::bytes_type *)data;
 	if (len < sizeof(*addr_6) + 2) {
-		BOOST_LOG_TRIVIAL(info) << "sock5 addr6 len error: "<< len;
+		BOOST_LOG_TRIVIAL(error) << "sock5 addr6 len error: "<< len;
 		return -1;
 	}
 	remote.address(ip::make_address_v6(*addr_6));
@@ -48,7 +48,7 @@ static int parse_host(std::string &host, std::string &port, uint8_t* data, std::
 {
 	int host_len = data[0];
 	if ( len < host_len +3) {
-		BOOST_LOG_TRIVIAL(info) << "sock5 host name len error: " << len <<"host len" << host_len;
+		BOOST_LOG_TRIVIAL(error) << "sock5 host name len error: " << len <<"host len" << host_len;
 		return -1;
 	}
 	host.append((char*)&data[1], host_len);
@@ -71,7 +71,7 @@ void raw_relay::stop_raw_relay(const relay_data::stop_src src)
 		return;
 	}
 	_stopped = true;
-	BOOST_LOG_TRIVIAL(info) << " raw relay "<<_session <<" stopped: "<< "from "<< src<< _stopped;
+//	BOOST_LOG_TRIVIAL(info) << " raw relay "<<_session <<" stopped: "<< "from "<< src<< _stopped;
 	boost::system::error_code err;
 	_sock.shutdown(tcp::socket::shutdown_both, err);
 	_sock.close(err);
@@ -85,8 +85,8 @@ void raw_relay::on_raw_send(/*std::shared_ptr<relay_data> buf, */const boost::sy
 	auto buf = _bufs.front();
 	if (error
 	    || len != buf->data_size()) {
-		BOOST_LOG_TRIVIAL(info) << "on raw relay "<<_session<<"send error: "<<error.message();
-		BOOST_LOG_TRIVIAL(info) << "\tlen: "<<len << " data size "<<buf->data_size();
+		BOOST_LOG_TRIVIAL(error) << "on raw relay "<<_session<<"send error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "\tlen: "<<len << " data size "<<buf->data_size();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -116,7 +116,7 @@ void raw_relay::send_data_on_raw(std::shared_ptr<relay_data> buf)
 void raw_relay::on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "on raw relay "<<_session<<" read error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "on raw relay "<<_session<<" read error: "<<error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -143,7 +143,7 @@ void raw_relay::start_data_relay()
 void raw_relay::on_local_addr_ok(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "on addr get error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "on addr get error: "<<error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -152,8 +152,8 @@ void raw_relay::on_local_addr_ok(std::shared_ptr<std::string> buf, const boost::
 void raw_relay::on_nogfw_write(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error || len != buf.size()) {
-		BOOST_LOG_TRIVIAL(info) << " on noblock write error: "<<error.message();
-		BOOST_LOG_TRIVIAL(info) << "  len: "<<len << " buf len" <<buf.size();
+		BOOST_LOG_TRIVIAL(error) << " on noblock write error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "  len: "<<len << " buf len" <<buf.size();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -162,7 +162,7 @@ void raw_relay::on_nogfw_write(tcp::socket &sock_r, tcp::socket &sock_w, std::st
 void raw_relay::on_nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << " on noblock read error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << " on noblock read error: "<<error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -185,11 +185,11 @@ void raw_relay::nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string
 void raw_relay::local_on_remote_connect(const boost::system::error_code& error)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << " connect remote error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << " connect remote error: "<<error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
-	BOOST_LOG_TRIVIAL(info) << " on connect remote "<<error.message();
+//	BOOST_LOG_TRIVIAL(info) << " on connect remote "<<error.message();
 	nogfw_read(_sock, _sock_remote, local_buf);
 	nogfw_read(_sock_remote, _sock, remote_buf);
 }
@@ -198,8 +198,8 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 	bool block = true;
 	auto data = (uint8_t*) & (*buf)[3];
 	if (error || len < 6 || (*buf)[1] != 1 ) {
-		BOOST_LOG_TRIVIAL(info) << "on addr get error : "<<error.message();
-		BOOST_LOG_TRIVIAL(info) << "\t len : "<<len << " cmd: "<< (int)(*buf)[1];
+		BOOST_LOG_TRIVIAL(error) << "on addr get error : "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "\t len : "<<len << " cmd: "<< (int)(*buf)[1];
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -228,7 +228,7 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 		//block = false;
 
 		if (!block) {
-			BOOST_LOG_TRIVIAL(debug) << "resolve host " <<host_name <<" port "<<port_name ;
+//			BOOST_LOG_TRIVIAL(debug) << "resolve host " <<host_name <<" port "<<port_name ;
 			boost::system::error_code ec;
 			auto re_hosts = _host_resolve.resolve(host_name, port_name, ec);
 			if (ec) {
@@ -237,7 +237,7 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 				return;
 
 			}
-			BOOST_LOG_TRIVIAL(info) << "start remote connect : "<<ec.message();
+//			BOOST_LOG_TRIVIAL(info) << "start remote connect : "<<ec.message();
 			asio::async_connect(_sock_remote, re_hosts,
 					    asio::bind_executor(_strand,
 								std::bind(&raw_relay::local_on_remote_connect, shared_from_this(),
@@ -275,7 +275,7 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 
 	// send sock5 ok back
 	// WIP write on start?
-	BOOST_LOG_TRIVIAL(info) << " send sock5 ok back : ";
+	//BOOST_LOG_TRIVIAL(info) << " send sock5 ok back : ";
 	*buf =  {5, 0, 0, 1, 0, 0, 0, 0, 0, 0};
 	async_write(_sock, asio::buffer(*buf),
 		    asio::bind_executor(_strand,
@@ -287,8 +287,8 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error || len != 2) {
-		BOOST_LOG_TRIVIAL(info) << "write 0x5 0x0 error: "<<error.message();
-		BOOST_LOG_TRIVIAL(info) << "\twrite len: "<<len;
+		BOOST_LOG_TRIVIAL(error) << "write 0x5 0x0 error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "\twrite len: "<<len;
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -301,7 +301,7 @@ void raw_relay::start_local_addr_get(std::shared_ptr<std::string> buf, const boo
 void raw_relay::local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << "on start read error: "<<error.message();
+		BOOST_LOG_TRIVIAL(error) << "on start read error: "<<error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
@@ -326,12 +326,12 @@ void raw_relay::local_start()
 void raw_relay::on_remote_connect(const boost::system::error_code& error)
 {
 	if (error) {
-		BOOST_LOG_TRIVIAL(info) << " raw relay "<<_session<<" remote connect error: "<< error.message();
+		BOOST_LOG_TRIVIAL(error) << " raw relay "<<_session<<" remote connect error: "<< error.message();
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}
 	// send start relay
-	BOOST_LOG_TRIVIAL(info) << _session << " on remote connect, start raw data relay "<< error.message();
+//	BOOST_LOG_TRIVIAL(info) << _session << " on remote connect, start raw data relay "<< error.message();
 	auto buffer = std::make_shared<relay_data>(_session, relay_data::START_RELAY);
 	auto start_task = std::bind(&ssl_relay::send_data_on_ssl, _manager, buffer);
 	_manager->get_strand().post(start_task, asio::get_associated_allocator(start_task));
@@ -382,7 +382,7 @@ void raw_relay::start_remote_connect(std::shared_ptr<relay_data> buf)
 		boost::system::error_code ec;
 		auto re_hosts = _host_resolve.resolve(host_name, port_name, ec);
 		if (ec) {
-			BOOST_LOG_TRIVIAL(debug) << "host resolve error"<<ec.message();
+			BOOST_LOG_TRIVIAL(error) << "host resolve error"<<ec.message();
 			stop_raw_relay(relay_data::from_raw);
 			return;
 
@@ -395,7 +395,7 @@ void raw_relay::start_remote_connect(std::shared_ptr<relay_data> buf)
 	}
 
 	default:
-		BOOST_LOG_TRIVIAL(info) << "sock5 cmd type not support "<< cmd;
+		BOOST_LOG_TRIVIAL(error) << "sock5 cmd type not support "<< cmd;
 		stop_raw_relay(relay_data::from_raw);
 		return;
 	}

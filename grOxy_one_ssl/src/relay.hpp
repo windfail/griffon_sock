@@ -115,8 +115,8 @@ class raw_relay
 	:public std::enable_shared_from_this<raw_relay>
 {
 public:
-	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager) :
-		_session (0), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
+	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager, uint32_t session = 0) :
+		_session (session), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
 		{
 			BOOST_LOG_TRIVIAL(info) << "raw relay construct: ";
 		}
