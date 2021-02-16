@@ -56,8 +56,9 @@ static int parse_host(std::string &host, std::string &port, uint8_t* data, std::
 
 	std::ostringstream port_name;
 	port_name << ((pt[0]<<8)|pt[1]);
-	BOOST_LOG_TRIVIAL(debug) << "host " <<host <<" port "<<port_name.str() ;
 	port = port_name.str();
+	BOOST_LOG_TRIVIAL(debug) << "host " <<host <<" port "<<port ;
+
 	return 0;
 
 }
@@ -70,7 +71,7 @@ void raw_relay::stop_raw_relay(const relay_data::stop_src src)
 		return;
 	}
 	_stopped = true;
-//	BOOST_LOG_TRIVIAL(info) << " raw relay "<<_session <<" stopped: "<< "from "<< src<< _stopped;
+	BOOST_LOG_TRIVIAL(info) << " raw relay "<<_session <<" stopped: "<< "from "<< src<< _stopped;
 	boost::system::error_code err;
 	_sock.shutdown(tcp::socket::shutdown_both, err);
 	_sock.close(err);
@@ -330,7 +331,7 @@ void raw_relay::on_remote_connect(const boost::system::error_code& error)
 		return;
 	}
 	// send start relay
-//	BOOST_LOG_TRIVIAL(info) << "on remote connect "<< error.message();
+	BOOST_LOG_TRIVIAL(info) << _session << " on remote connect, start raw data relay "<< error.message();
 	auto buffer = std::make_shared<relay_data>(_session, relay_data::START_RELAY);
 	auto start_task = std::bind(&ssl_relay::send_data_on_ssl, _manager, buffer);
 	_manager->get_strand().post(start_task, asio::get_associated_allocator(start_task));

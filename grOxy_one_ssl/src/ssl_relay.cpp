@@ -38,22 +38,29 @@ void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 {
 	if (src == relay_data::ssl_err) {
 		// stop all raw_relay
+		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay :"<< _relays.size()<<" _relays "<<_bufs.size() <<"bufs ";
 		_relays.clear();
 		_bufs = std::queue<std::shared_ptr<relay_data>> ();
 		boost::system::error_code err;
 //		if (_started) {
-		_sock.shutdown(err);
-		_started = false;
+		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay shutdown _sock :";
+		// if (_ssl_status == SSL_START) {
+		// 	_sock.shutdown(err);
+		// }
+		_ssl_status = NOT_START;
 //		}
+		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay shutdown _sock lowest :";
 		_sock.lowest_layer().shutdown(tcp::socket::shutdown_both, err);
+		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay close :";
 		_sock.lowest_layer().close(err);
+		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay over ";
 		return;
 	}
 
 	_relays.erase(session);
 	if (src == relay_data::from_raw) {
 		// send to ssl
-//		BOOST_LOG_TRIVIAL(info) << " send raw stop : "<<session;
+		BOOST_LOG_TRIVIAL(info) << " send raw stop : "<<session;
 		auto buffer = std::make_shared<relay_data>(session, relay_data::STOP_RELAY);
 		send_data_on_ssl(buffer);
 
@@ -101,8 +108,9 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 	if (_bufs.size() > 1) {
 		return;
 	}
-	if (!_started) {
+	if (_ssl_status == NOT_START) {
 		// start ssl connect
+		_ssl_status = SSL_CONNECT;
 		start_ssl_connect();
 		return;
 	}
@@ -173,7 +181,7 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 	}
 
 	auto session = buf->session();
-//	BOOST_LOG_TRIVIAL(info) << "read sess"<<buf->session()<<", cmd"<<buf->cmd()<<",len"<<buf->data_size()<<"  on ssl " << buf_to_string( buf->header_buffer().data(), buf->header_buffer().size());
+	BOOST_LOG_TRIVIAL(info) << "read sess"<<buf->session()<<", cmd"<<buf->cmd()<<",len"<<buf->data_size()<<"  on ssl " << buf_to_string( buf->header_buffer().data(), buf->header_buffer().size());
 
 	if (buf->data_size() != 0) {
 //		BOOST_LOG_TRIVIAL(info) << "start data read: ";
@@ -187,6 +195,7 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 	}
 // data size == 0
 	if (buf->cmd() == relay_data::START_RELAY) {
+		BOOST_LOG_TRIVIAL(info) << session <<" START RELAY: ";
 		auto val = _relays.find(session);
 		if (val == _relays.end() ) {
 			// local stopped before remote connect, tell remote to stop
@@ -208,7 +217,7 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 void ssl_relay::start_ssl_data_relay()
 {
 	auto buf = std::make_shared<relay_data>(0);
-//	BOOST_LOG_TRIVIAL(info) << "start header read: ";
+	BOOST_LOG_TRIVIAL(info) << "start header read: ";
 	_sock.async_read_some(
 		buf->header_buffer(),
 		asio::bind_executor(
@@ -225,7 +234,7 @@ void ssl_relay::on_ssl_handshake(const boost::system::error_code& error)
 		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
-	_started = true;
+	_ssl_status = SSL_START;
 	start_ssl_data_relay();
 }
 
@@ -287,7 +296,7 @@ void ssl_relay::local_ssl_handshake(const boost::system::error_code& error)
 		return;
 	}
 	BOOST_LOG_TRIVIAL(info) << "ssl handshake ok" ;
-	_started = true;
+	_ssl_status = SSL_START;
 	auto buf = _bufs.front();
 	async_write(_sock, buf->buffers(),
 		    asio::bind_executor(

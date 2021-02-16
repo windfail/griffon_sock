@@ -224,7 +224,11 @@ private:
  //		~_relay_t();
  //	};
 	asio::io_context *_io_context;
-	bool _started {false};
+	enum {
+		NOT_START,
+		SSL_CONNECT,
+		SSL_START
+	} _ssl_status = NOT_START;
 
 	asio::io_context::strand _strand;
 	tcp::acceptor _acceptor;
