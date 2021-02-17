@@ -4,6 +4,58 @@
 #include <fstream>
 #include <tuple>
 
+#include <boost/asio.hpp>
+#include <memory>
+#include <vector>
+#include <thread>
+//#include "relay.hpp"
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/utility/setup/file.hpp>
+#include <boost/log/utility/setup/common_attributes.hpp>
+
+#include "relay_server.hpp"
+
+namespace logging = boost::log;
+namespace keywords = boost::log::keywords;
+
+static void init_log(const std::string &log_file)
+{
+
+	logging::add_file_log(keywords::file_name = log_file,
+			      keywords::target_file_name = log_file,
+			      keywords::auto_flush = true,
+			      keywords::format = "[%ThreadID%][%TimeStamp%]: %Message%"                                 /*< log record format >*/);
+
+	logging::add_common_attributes();
+	logging::core::get()->set_filter (
+		logging::trivial::severity >= logging::trivial::warning
+		);
+	BOOST_LOG_TRIVIAL(trace) << "A trace severity message";
+	BOOST_LOG_TRIVIAL(debug) << "A debug severity message";
+	BOOST_LOG_TRIVIAL(info) << "An informational severity message";
+	BOOST_LOG_TRIVIAL(warning) << "A warning severity message";
+	BOOST_LOG_TRIVIAL(error) << "An error severity message";
+	BOOST_LOG_TRIVIAL(fatal) << "A fatal severity message";
+}
+
+int server_start(const relay_config &config)
+{
+	init_log(config.logfile);
+
+	relay_server server(config);
+	server.start_server();
+
+	std::vector<std::thread> server_th;
+	for (int i = 1; i < config.thread_num; i++) {
+		server_th.emplace_back([&](){ server.run();});
+	}
+	server.run();
+
+	return 0;
+
+}
+
 void str_strip(std::string & src, const std::string &ch)
 {
 	auto start = src.find_first_not_of(ch);
@@ -25,34 +77,20 @@ std::pair<std::string, std::string> str_split(const std::string & src, const cha
 
 }
 
-int local_server(int l_port, int r_port, const std::string & r_ip, int thread_num);
-int remote_server(int port, int thread_num);
-
-const bool LOCAL = true;
-const bool REMOTE = false;
-
 int main(int argc, char*argv[])
 {
+	relay_config config;
+
 	int cmd;
-	int port = 1080;
-	int thread_num = 10;
-	bool type = LOCAL;
-	std::string r_ip = "144.202.86.172";
-	int r_port = 10230;
 	std::string conf_file = "/etc/groxy_ssl/groxy_ssl.conf";
 
 	while (1) {
 		int option_index = 0;
 		static struct option long_options[] = {
-			{"lport",  required_argument,       0,  1 },
-			{"thread",  required_argument,       0,  2 },
-			{"rport",  required_argument,       0,  3 },
-			{"rip",  required_argument,       0,  4 },
-			{"remote",  no_argument,       0,  5 },
 			{0,         0,                 0,  0 }
 		};
 
-		cmd = getopt_long(argc, argv, "p:t:c:",
+		cmd = getopt_long(argc, argv, "c:",
 				long_options, &option_index);
 		if (cmd == -1)
 			break;
@@ -63,28 +101,6 @@ int main(int argc, char*argv[])
 			break;
 		}
 
-		case 'p':
-		case 1: {
-			port = atoi(optarg);
-			break;
-		}
-		case 't':
-		case 2:
-			thread_num = atoi(optarg);
-			if (thread_num < 2) {
-				std::cout <<"thread num at least 2\n";
-				return -1;
-			}
-			break;
-		case 3:
-			r_port = atoi(optarg);
-			break;
-		case 4:
-			r_ip = optarg;
-			break;
-		case 5:
-			type = REMOTE;
-			break;
 
 		}
 
@@ -99,24 +115,26 @@ int main(int argc, char*argv[])
 		str_strip(key, " \t");
 		str_strip(value, " \t");
 		if (key == "thread_num") {
-			thread_num = stoi(value);
+			config.thread_num = stoi(value);
 		} else if (key == "port") {
-			port = stoi(value);
+			config.local_port = stoi(value);
 		} else if (key == "local") {
-			type = value == "true";
+			config.local = value == "true";
 		} else if (key == "server") {
-			r_ip = value;
+			config.remote_ip = value;
 		} else if (key == "server_port") {
-			r_port = stoi(value);
+			config.remote_port = stoi(value);
+		} else if (key == "cert") {
+			config.cert = value;
+		} else if (key == "key") {
+			config.key = value;
+		} else if (key == "gfwlist") {
+			config.gfw_file = value;
+		} else if (key == "log") {
+			config.logfile = value;
 		}
 	}
-
-	if (type == LOCAL) {
-		local_server(port, r_port, r_ip, thread_num);
-
-	} else {
-		remote_server(port, thread_num);
-	}
+	server_start(config);
 
 	return 0;
 

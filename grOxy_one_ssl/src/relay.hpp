@@ -25,7 +25,21 @@ typedef ssl::stream<tcp::socket> ssl_socket;
 const int READ_BUFFER_SIZE = 4096;
 const int TIMEOUT =  5;
 
+struct relay_config
+{
+	int local_port = 10230;
+	int remote_port = 10230;
+	std::string remote_ip = "";
+	int thread_num = 1;
+	bool local = true;
+	std::string cert = "/etc/groxy_ssl/groxy_ssl.crt";
+	std::string key = "/etc/groxy_ssl/groxy_ssl.pem";
+	std::string logfile = "/dev/null";
+	std::string gfw_file = "/etc/groxy_ssl/gfwlist";
 
+};
+
+ssl::context init_ssl(const relay_config &config);
 class ssl_relay;
 
 class relay_data
@@ -173,30 +187,21 @@ class ssl_relay
 	:public std::enable_shared_from_this<ssl_relay>
 {
 public:
-
-	// remote ssl relay
-	ssl_relay(asio::io_context *io, ssl::context &ctx) :
-		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io),
-		_remote(), _timer(*io), _rand(std::random_device()())
+	ssl_relay(asio::io_context *io, const relay_config &config) :
+		_io_context(io), _strand(*io), _ctx(init_ssl(config)),
+		_sock(std::make_unique<ssl_socket>(*io, _ctx)),
+//		_acceptor(*io()),//, tcp::endpoint(tcp::v4(), config.local_port)),
+		_remote(ip::make_address(config.remote_ip), config.remote_port),
+		_timer(*io), _rand(std::random_device()()),
+		_config(config), _gfw(config.gfw_file)
 	{
-		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
-//		std::random_device rd;
 
-	}
-
-	// local ssl relay
-	ssl_relay(asio::io_context *io, ssl::context &ctx, const tcp::endpoint &remote, int local_port) :
-		_io_context(io), _strand(*io), _sock(*io, ctx),_acceptor(*io, tcp::endpoint(tcp::v4(), local_port)),
-		_remote(remote), _timer(*io),_rand(std::random_device()())
-	{
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
 	}
+
 	~ssl_relay()  {
 		BOOST_LOG_TRIVIAL(debug) << "ssl relay destruct";
 	};
-
-//	void local_start();
-//	void remote_start();
 
 	asio::io_context::strand & get_strand() {
 		return _strand;
@@ -204,41 +209,39 @@ public:
 	void stop_ssl_relay(uint32_t session, relay_data::stop_src src);
 	void send_data_on_ssl(std::shared_ptr<relay_data> buf);
 	void start_ssl_data_relay();
-	ssl_socket & get_sock() {return _sock;}
+	ssl_socket & get_sock() {return *_sock;}
 
-	void local_start_accept();
-
+//	void local_start_accept();
+	void local_handle_accept(std::shared_ptr<raw_relay> relay);//, const boost::system::error_code& error);
 	void remote_ssl_start();
 	void timer_handle();
-	gfw_list gfw;
+	bool check_host_gfw(const std::string &host)
+		{
+			return _gfw.is_blocked(host);
+		}
 
 private:
 	class _relay_t;
- // {
- //	public:
- //		std::shared_ptr<raw_relay> relay;
- //		int timeout {TIMEOUT};
- //		_relay_t() {
- //		};
- //		_relay_t(const std::shared_ptr<raw_relay> &relay) :relay(relay) {};
- //		~_relay_t();
- //	};
 	asio::io_context *_io_context;
 	enum {
 		NOT_START,
 		SSL_CONNECT,
-		SSL_START
+		SSL_START,
+		SSL_CLOSED
 	} _ssl_status = NOT_START;
+	relay_config _config;
 
+	ssl::context _ctx;
 	asio::io_context::strand _strand;
-	tcp::acceptor _acceptor;
-	ssl_socket  _sock;
+
+	std::shared_ptr<ssl_socket>  _sock;
 
 	std::unordered_map<uint32_t, std::shared_ptr<_relay_t>> _relays;
 	asio::steady_timer _timer;
 
 	tcp::endpoint _remote;	// remote ssl relay ep
 	std::queue<std::shared_ptr<relay_data>> _bufs; // buffers for write
+	gfw_list _gfw;
 
 	// random
 	std::minstd_rand _rand;
@@ -249,9 +252,7 @@ private:
 	void on_write_ssl(/*std::shared_ptr<relay_data> data, */const boost::system::error_code& error, std::size_t len);
 	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
 
-	void local_handle_accept(std::shared_ptr<raw_relay> relay, const boost::system::error_code& error);
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
-
 	// remote
 	void on_ssl_handshake(const boost::system::error_code& error);
 

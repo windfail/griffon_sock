@@ -3,21 +3,15 @@
 #include <iomanip>
 std::string buf_to_string(void *buf, std::size_t size)
 {
-	return "";
-
 	std::ostringstream out;
 	out << std::setfill('0') << std::setw(2) << std::hex;
 
-//	out.setf(out.hex);
-//	out.unsetf(out.showbase);
-//	out.width(3);
 	for (std::size_t i =0; i< size; i++ ) {
 		unsigned int a = ((uint8_t*)buf)[i];
 		out << a << ' ';
 		if ((i+1) % 32 == 0) out << '\n';
 	}
 	return out.str();
-
 }
 static int parse_addr4(tcp::endpoint &remote, uint8_t* data, std::size_t len)
 {
@@ -224,7 +218,7 @@ void raw_relay::on_local_addr_get(std::shared_ptr<std::string> buf, const boost:
 			stop_raw_relay(relay_data::from_raw);
 			return;
 		}
-		block = _manager->gfw.is_blocked(host_name);
+		block = _manager->check_host_gfw(host_name);
 		//block = false;
 
 		if (!block) {

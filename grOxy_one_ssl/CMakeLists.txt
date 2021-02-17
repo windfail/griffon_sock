@@ -5,14 +5,14 @@ cmake_minimum_required(VERSION 3.5)
 
 # Set the project name
 project (netsock)
-#SET(CMAKE_BUILD_TYPE "Release")
-SET(CMAKE_BUILD_TYPE "Debug")
+SET(CMAKE_BUILD_TYPE "Release")
+#SET(CMAKE_BUILD_TYPE "Debug")
 # Create a sources variable with a link to all cpp files to compile
 set(SOURCES
     src/ssl_relay.cpp
     src/raw_relay.cpp
     src/relay_server.cpp
-    src/server.cpp
+    #    src/server.cpp
     src/gfwlist.cpp
     src/main.cpp
 )
@@ -25,7 +25,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 #  PRIVATE "-pthread")
 
 # find a boost install with the libraries filesystem and system
-find_package(Boost 1.71 REQUIRED COMPONENTS system log)
+find_package(Boost 1.71 REQUIRED COMPONENTS system log log_setup)
 
 add_definitions(-DBOOST_LOG_DYN_LINK)
 # check if boost was found
@@ -37,6 +37,7 @@ endif()
 
 target_link_libraries( ${PROJECT_NAME}
     PRIVATE
+	Boost::log_setup
 	Boost::log
 	Boost::system
 	pthread

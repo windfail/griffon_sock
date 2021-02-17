@@ -14,22 +14,6 @@
 
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
-// void gfw_list::save_list(const std::string & file, const std::string &white, const std::string &block)
-// {
-// 	std::ofstream w_file(file);
-// 	for (const auto & host : _hosts) {
-// 		w_file << host << "\n";
-// 	}
-
-// 	// std::ofstream w_white(white);
-// 	// for (const auto & wh : _whites) {
-// 	// 	w_white << wh << "\n";
-// 	// }
-// 	// std::ofstream w_block(block);
-// 	// for (const auto & bl : _blocks) {
-// 	// 	w_block <<bl <<"\n";
-// 	// }
-// }
 void replace_string(std::string &orig, const std::string &src, const std::string &dest)
 {
 	auto pos = 0;
@@ -40,6 +24,9 @@ void replace_string(std::string &orig, const std::string &src, const std::string
 }
 void gfw_list::load_list(const std::string &file)//, const std::string &white, const std::string &block)
 {
+	if (file == "") {
+		return;
+	}
  	std::string line;
 // 	for (std::ifstream in_wh(white); std::getline(in_wh, line); ) {
 // #if USE_VECTOR
@@ -93,8 +80,8 @@ int gfw_list::add_host(const std::string & host)
 }
 bool gfw_list::is_blocked(const std::string & host)
 {
-	return true;
-
+	if (_hosts.size() == 0)
+		return true;
 //	return _hosts.end() == _hosts.find(host);
 //#if USE_VECTOR
 // 	if (_whites.end() != std::find(_whites.begin(), _whites.end(), host)) {
