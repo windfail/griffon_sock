@@ -194,7 +194,7 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 		stop_ssl_relay(0, relay_data::ssl_err);
 		return;
 	}
-
+	auto this_ptr = shared_from_this();
 	auto session = buf->session();
 //	BOOST_LOG_TRIVIAL(info) << "read sess"<<buf->session()<<", cmd"<<buf->cmd()<<",len"<<buf->data_size()<<"  on ssl " << buf_to_string( buf->header_buffer().data(), buf->header_buffer().size());
 
@@ -202,8 +202,12 @@ void ssl_relay::on_read_ssl_header(std::shared_ptr<relay_data> buf, const boost:
 		async_read(*_sock, buf->data_buffer(),
 			   asio::bind_executor(
 				   _strand,
-				   std::bind(&ssl_relay::on_read_ssl_data, shared_from_this(), buf,
-					     std::placeholders::_1, std::placeholders::_2)));
+				   [=](const boost::system::error_code& error, std::size_t len)
+					   {
+						   this_ptr->on_read_ssl_data(buf, error, len);
+					   }));
+//				   std::bind(&ssl_relay::on_read_ssl_data, shared_from_this(), buf,
+//					     std::placeholders::_1, std::placeholders::_2)));
 		return;
 	}
 // data size == 0
@@ -231,12 +235,17 @@ void ssl_relay::start_ssl_data_relay()
 {
 	auto buf = std::make_shared<relay_data>(0);
 	// BOOST_LOG_TRIVIAL(info) << "start header read: ";
+	auto this_ptr = shared_from_this();
 	_sock->async_read_some(
 		buf->header_buffer(),
 		asio::bind_executor(
 			_strand,
-			std::bind(&ssl_relay::on_read_ssl_header, shared_from_this(), buf,
-				  std::placeholders::_1, std::placeholders::_2)));
+			[=](const boost::system::error_code& error, std::size_t len)
+				{
+					this_ptr->on_read_ssl_header(buf, error, len);
+				}));
+//			std::bind(&ssl_relay::on_read_ssl_header, shared_from_this(), buf,
+//				  std::placeholders::_1, std::placeholders::_2)));
 //	BOOST_LOG_TRIVIAL(info) << "end of start header read: ";
 }
 // remote ssl relay server functions
@@ -254,9 +263,15 @@ void ssl_relay::on_ssl_handshake(const boost::system::error_code& error)
 void ssl_relay::remote_ssl_start()
 {
 	_sock->lowest_layer().set_option(tcp::no_delay(true));
+	auto this_ptr = shared_from_this();
 	_sock->async_handshake(ssl_socket::server,
-			      std::bind(&ssl_relay::on_ssl_handshake, shared_from_this(),
-					std::placeholders::_1));
+			       [=](const boost::system::error_code& error) 
+				       {
+					       this_ptr->on_ssl_handshake(error);
+				       });
+
+			      // std::bind(&ssl_relay::on_ssl_handshake, shared_from_this(),
+			      // 		std::placeholders::_1));
 
 }
 // local ssl relay server functions
