@@ -3,6 +3,7 @@
 #include <random>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/coroutine.hpp>
 #include <memory>
 #include <unordered_map>
 #include <queue>
@@ -245,16 +246,17 @@ private:
 
 	// random
 	std::minstd_rand _rand;
-	// coroutine _start_ssl;
-	// coroutine _ssl_read;
-	// coroutine _ssl_write;
+	coroutine _start_ssl;
+	coroutine _ssl_read;
+	coroutine _ssl_write;
 //	static const boost::system::error_code _error;
 
 //	void on_read_ssl_header(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len);
 //	void on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
 
-	void on_write_ssl(/*std::shared_ptr<relay_data> data, */const boost::system::error_code& error, std::size_t len);
-	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
+
+//	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
+	void ssl_data_send();
 
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
 	// remote
