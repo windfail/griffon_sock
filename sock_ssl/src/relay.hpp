@@ -212,7 +212,7 @@ public:
 
 	ssl_socket & get_sock() {return *_sock;}
 
-	void ssl_connect_start();
+	void ssl_connect_start(const boost::system::error_code& ec = boost::system::error_code());
 	void local_handle_accept(std::shared_ptr<raw_relay> relay);
 
 	void timer_handle();
@@ -246,9 +246,9 @@ private:
 
 	// random
 	std::minstd_rand _rand;
-	coroutine _start_ssl;
-	coroutine _ssl_read;
-	coroutine _ssl_write;
+	asio::coroutine _start_ssl;
+	asio::coroutine _ssl_read;
+	asio::coroutine _ssl_write;
 //	static const boost::system::error_code _error;
 
 //	void on_read_ssl_header(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len);
@@ -256,8 +256,15 @@ private:
 
 
 //	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
-	void ssl_data_send();
+//	void ssl_data_send();
+	void ssl_data_send(const boost::system::error_code& ec = boost::system::error_code(),
+			   std::size_t len = 0);
+	void ssl_data_read(const boost::system::error_code& ec = boost::system::error_code(),
+			   std::size_t len = 0,
+			   std::shared_ptr<relay_data> buf = std::make_shared<relay_data>(0));
 
+	void do_ssl_header(std::shared_ptr<relay_data>& buf);
+	void do_ssl_data(std::shared_ptr<relay_data>& buf);
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
 	// remote
 //	void on_ssl_handshake(const boost::system::error_code& error);
