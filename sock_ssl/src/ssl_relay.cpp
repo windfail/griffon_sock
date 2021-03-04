@@ -1,9 +1,12 @@
 
 #include <iostream>
-//#include <boost/asio/spawn.hpp>
+#include <boost/asio/spawn.hpp>
 //#include <boost/asio/yield.hpp>
 #include <sstream>
 #include "relay.hpp"
+#include <boost/format.hpp>
+
+using boost::format;
 
 // ok begin common ssl relay functions
 std::string buf_to_string(void *buf, std::size_t size);
@@ -62,9 +65,6 @@ void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 		if (_config.local) {
 			_ctx = init_ssl(_config);
 			_sock = std::make_unique<ssl_socket>(*_io_context, _ctx);
-			_start_ssl = asio::coroutine();
-			_ssl_read = asio::coroutine();
-			_ssl_write = asio::coroutine();
 		}
 
 		return;
@@ -107,8 +107,6 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 		return;
 	}
 // start ssl_write routine
-	_ssl_write = asio::coroutine();
-
 	ssl_data_send();
 }
 
@@ -144,31 +142,11 @@ uint32_t ssl_relay::add_new_relay(const std::shared_ptr<raw_relay> &relay)
 	_relays.emplace(session, std::make_shared<_relay_t>(relay));
 	return session;
 }
-void ssl_relay::ssl_data_send(const boost::system::error_code& ec, std::size_t len)
-{
-	auto self(shared_from_this());
-	auto this_call = asio::bind_executor(
-		_strand,
-		[self](const boost::system::error_code& ec, std::size_t len) {
-			self->ssl_data_send(ec, len);
-		});
 
-	BOOST_ASIO_CORO_REENTER (_ssl_write) while(!_bufs.empty()) {
-		BOOST_ASIO_CORO_YIELD async_write(*_sock, _bufs.front()->buffers(), this_call);
-		if (ec || len != _bufs.front()->size()) {
-			BOOST_LOG_TRIVIAL(error) << "ssl write error: "<<ec.message();
-			BOOST_LOG_TRIVIAL(error) << "len: "<<len;
-			stop_ssl_relay(0, relay_data::ssl_err);
-			return;
-		}
-		_bufs.pop();
-	}
-}
-#if 0
 void ssl_relay::ssl_data_send()
 {
 	auto self(shared_from_this());
-	auto ssl_send = [this, self](boost::asio::yield_context yield) {
+	asio::spawn(_strand, [this, self](asio::yield_context yield) {
 		try {
 			while (!_bufs.empty()) {
 				auto buf = _bufs.front();
@@ -176,9 +154,8 @@ void ssl_relay::ssl_data_send()
 				auto len = async_write(*_sock, buf->buffers(), yield);
 				// check len
 				if (len != buf->size()) {
-					std::ostringstream msg;
-					msg << " len: "<<len << " data size "<<buf->size();
-					throw(boost::system::system_error(boost::system::error_code(), msg.str()));
+					auto emsg = format(" len %1%, data size %2%")%len % buf->size();
+					throw(boost::system::system_error(boost::system::error_code(), emsg.str()));
 				}
 				_bufs.pop();
 			}
@@ -186,40 +163,9 @@ void ssl_relay::ssl_data_send()
 			BOOST_LOG_TRIVIAL(error) << "ssl write error: "<<error.what();
 			stop_ssl_relay(0, relay_data::ssl_err);
 		}
-	};
-	boost::asio::spawn(_strand, ssl_send);
+	});
 }
-#endif
-void ssl_relay::ssl_connect_start(const boost::system::error_code& ec)
-{
-	if (ec) {
-		BOOST_LOG_TRIVIAL(error) << "ssl connect error: "<<ec.message();
-		stop_ssl_relay(0, relay_data::ssl_err);
-		return;
-	}
-	auto self(shared_from_this());
-	auto this_call = asio::bind_executor(
-		_strand,
-		[self](const boost::system::error_code& ec) {
-			self->ssl_connect_start(ec);
-		});
 
-	BOOST_ASIO_CORO_REENTER (_start_ssl) {
-		if (_config.local) {
-			BOOST_ASIO_CORO_YIELD _sock->lowest_layer().async_connect(_remote, this_call);
-		}
-		_sock->lowest_layer().set_option(tcp::no_delay(true));
-		BOOST_ASIO_CORO_YIELD _sock->async_handshake(
-			_config.local ? ssl_socket::client : ssl_socket::server,
-			this_call);
-		_ssl_status = SSL_START;
-		// start buffer write routine
-		_ssl_write = asio::coroutine();
-		ssl_data_send();
-		// start ssl read routine
-		ssl_data_read();
-	}
-}
 void ssl_relay::do_ssl_data(std::shared_ptr<relay_data>& buf)
 {
 	auto session = buf->session();
@@ -237,13 +183,7 @@ void ssl_relay::do_ssl_data(std::shared_ptr<relay_data>& buf)
 		_relays[session] = std::make_shared<_relay_t>(relay);
 		auto start_task = std::bind(&raw_relay::start_remote_connect, relay, buf);
 		relay->get_strand().post(start_task, asio::get_associated_allocator(start_task));
-	}
-
-}
-void ssl_relay::do_ssl_header(std::shared_ptr<relay_data>& buf)
-{
-	auto session = buf->session();
-	if (buf->cmd() == relay_data::START_RELAY) {
+	} else if (buf->cmd() == relay_data::START_RELAY) {
 //		BOOST_LOG_TRIVIAL(info) << session <<" START RELAY: ";
 		auto val = _relays.find(session);
 		if (val == _relays.end() ) { // local stopped before remote connect, tell remote to stop
@@ -257,90 +197,44 @@ void ssl_relay::do_ssl_header(std::shared_ptr<relay_data>& buf)
 	} else if (buf->cmd() == relay_data::STOP_RELAY) { // post stop to raw
 		_relays.erase(session);
 	}
-
 }
-void ssl_relay::ssl_data_read(const boost::system::error_code& ec, std::size_t len, std::shared_ptr<relay_data> buf)
-{
-	if (ec) {
-		BOOST_LOG_TRIVIAL(error) << "ssl read error: "<<ec.message();
-		stop_ssl_relay(0, relay_data::ssl_err);
-		return;
-	}
-	auto self(shared_from_this());
 
-	BOOST_ASIO_CORO_REENTER(_ssl_read) while(true){
-		BOOST_ASIO_CORO_YIELD _sock->async_read_some(
-			buf->header_buffer(),
-			asio::bind_executor(
-				_strand,
-				[self, buf](const boost::system::error_code& ec, std::size_t len){
-					self->ssl_data_read(ec, len, buf);
-				}));
-		if (len != buf->header_buffer().size()
-		    || buf->head()._len > READ_BUFFER_SIZE) {
-			BOOST_LOG_TRIVIAL(error) << " header len: "<<len << " expect "<<buf->header_size() << " data len "<<buf->head()._len
-			    << " session:" << buf->session()<<", cmd"<<buf->cmd()<<",len"<<buf->data_size();
-			stop_ssl_relay(0, relay_data::ssl_err);
-			return;
-
-		}
-
-		if (buf->data_size() != 0) {
-			BOOST_ASIO_CORO_YIELD async_read(*_sock, buf->data_buffer(),
-					 asio::bind_executor(
-						 _strand,
-						 [self, buf](const boost::system::error_code& ec, std::size_t len){
-							 self->ssl_data_read(ec, len, buf);
-						 }));
-			if (len != buf->data_size()) {
-				BOOST_LOG_TRIVIAL(error) << " read len: "<<len << " expect "<<buf->size();
-				stop_ssl_relay(0, relay_data::ssl_err);
-				return;
-			}
-
-			do_ssl_data(buf);
-		} else {
-			do_ssl_header(buf);
-		}
-		buf = std::make_shared<relay_data>(0);
-	}
-}
-#if 0
-void ssl_relay::ssl_connect_start()
+void ssl_relay::ssl_data_read()
 {
 	auto self(shared_from_this());
-
-	auto ssl_read = [this, self](boost::asio::yield_context yield) {
+	asio::spawn(_strand, [this, self](boost::asio::yield_context yield) {
 		try {
 			while (true) {
 				auto buf = std::make_shared<relay_data>(0);
 				auto len = _sock->async_read_some(buf->header_buffer(), yield);
 				if (len != buf->header_buffer().size()
 				    || buf->head()._len > READ_BUFFER_SIZE) {
-					std::ostringstream msg;
-					msg << " header len: "<<len << " expect "<<buf->header_size() << " data len "<<buf->head()._len
-					    << " session:" << buf->session()<<", cmd"<<buf->cmd()<<",len"<<buf->data_size();
-					throw(boost::system::system_error(boost::system::error_code(), msg.str()));
+					auto emsg = format(
+						" header len: %1%, expect %2%, hsize %3%, session %4%, cmd %5%, dlen %6%")
+						%len %buf->header_size() % buf->head()._len %buf->session() %buf->cmd() %buf->data_size();
+					throw(boost::system::system_error(boost::system::error_code(), emsg.str()));
 				}
 				if (buf->data_size() != 0) { // read data
 					len = async_read(*_sock, buf->data_buffer(), yield);
 					if (len != buf->data_size()) {
-						std::ostringstream msg;
-						msg << " read len: "<<len << " expect "<<buf->size();
-						throw(boost::system::system_error(boost::system::error_code(), msg.str()));
+						auto emsg = format(" read len: %1%, expect %2%") % len % buf->size();
+						throw(boost::system::system_error(boost::system::error_code(), emsg.str()));
 					}
-					do_ssl_data(buf);
-				} else { // data len 0, command buf
-					do_ssl_header(buf);
 				}
+				do_ssl_data(buf);
 			}
 		} catch (boost::system::system_error& error) {
 			BOOST_LOG_TRIVIAL(error) << "ssl read error: "<<error.what();
 			stop_ssl_relay(0, relay_data::ssl_err);
 		}
-	};
+	});
 
-	auto ssl_start = [this, self, ssl_read](boost::asio::yield_context yield) {
+}
+void ssl_relay::ssl_connect_start()
+{
+	auto self(shared_from_this());
+
+	auto ssl_start = [this, self](asio::yield_context yield) {
 		try {
 			if (_config.local) {
 				_sock->lowest_layer().async_connect(_remote, yield);
@@ -351,10 +245,10 @@ void ssl_relay::ssl_connect_start()
 				yield);
 			_ssl_status = SSL_START;
 			// start buffer write routine
-			_ssl_write = asio::coroutine();
 			ssl_data_send();
 			// start ssl read routine
-			boost::asio::spawn(_strand, ssl_read);
+			ssl_data_read();
+
 		} catch (boost::system::system_error& error) {
 			BOOST_LOG_TRIVIAL(error) << "ssl connect error: "<<error.what();
 			stop_ssl_relay(0, relay_data::ssl_err);
@@ -362,7 +256,6 @@ void ssl_relay::ssl_connect_start()
 	};
 	asio::spawn(_strand, ssl_start);
 }
-#endif
 
 ssl::context init_ssl(const relay_config &config)
 {

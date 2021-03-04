@@ -3,7 +3,6 @@
 #include <random>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/asio/coroutine.hpp>
 #include <memory>
 #include <unordered_map>
 #include <queue>
@@ -131,7 +130,7 @@ class raw_relay
 {
 public:
 	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager, uint32_t session = 0) :
-		_session (session), _strand(*io), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
+		_session (session), _strand(io->get_executor()), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
 		{
 			BOOST_LOG_TRIVIAL(info) << "raw relay construct: ";
 		}
@@ -144,7 +143,7 @@ public:
 	auto session() {return _session;}
 	void session(uint32_t id) { _session = id;}
 	void stop_raw_relay(relay_data::stop_src);
-	asio::io_context::strand & get_strand() {
+	auto & get_strand() {
 		return _strand;
 	}
 	void send_data_on_raw(std::shared_ptr<relay_data> buf);
@@ -153,8 +152,7 @@ public:
 	void start_remote_connect(std::shared_ptr<relay_data> buf);
 
 private:
-	asio::io_context::strand _strand;
-
+	asio::strand<asio::io_context::executor_type> _strand;
 	uint32_t _session;
 
 	tcp::socket _sock;
@@ -165,21 +163,8 @@ private:
 	tcp::socket _sock_remote;
 	std::string local_buf;
 	std::string remote_buf;
-	void on_raw_send(/*std::shared_ptr<relay_data> buf, */const boost::system::error_code& error, std::size_t len);
 
-	void on_raw_read(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
-
-	void on_local_addr_ok(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
-	void on_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
-	void start_local_addr_get(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
-	void local_on_start(std::shared_ptr<std::string> buf, const boost::system::error_code& error, std::size_t len);
-
-	void on_remote_connect(const boost::system::error_code& error);
-
-	void local_on_remote_connect(const boost::system::error_code& error);
-	void nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf);
-	void on_nogfw_read(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len);
-	void on_nogfw_write(tcp::socket &sock_r, tcp::socket &sock_w, std::string &buf, const boost::system::error_code& error, std::size_t len);
+	void local_relay(bool dir);
 
 };
 
@@ -212,7 +197,7 @@ public:
 
 	ssl_socket & get_sock() {return *_sock;}
 
-	void ssl_connect_start(const boost::system::error_code& ec = boost::system::error_code());
+	void ssl_connect_start();
 	void local_handle_accept(std::shared_ptr<raw_relay> relay);
 
 	void timer_handle();
@@ -246,33 +231,18 @@ private:
 
 	// random
 	std::minstd_rand _rand;
-	asio::coroutine _start_ssl;
-	asio::coroutine _ssl_read;
-	asio::coroutine _ssl_write;
-//	static const boost::system::error_code _error;
 
-//	void on_read_ssl_header(std::shared_ptr<relay_data> w_data, const boost::system::error_code& error, std::size_t len);
-//	void on_read_ssl_data(std::shared_ptr<relay_data> buf, const boost::system::error_code& error, std::size_t len);
+	void ssl_data_send();
+	void ssl_data_read();
 
-
-//	void ssl_data_relay(std::shared_ptr<relay_data> w_data);
-//	void ssl_data_send();
-	void ssl_data_send(const boost::system::error_code& ec = boost::system::error_code(),
-			   std::size_t len = 0);
-	void ssl_data_read(const boost::system::error_code& ec = boost::system::error_code(),
-			   std::size_t len = 0,
-			   std::shared_ptr<relay_data> buf = std::make_shared<relay_data>(0));
-
-	void do_ssl_header(std::shared_ptr<relay_data>& buf);
 	void do_ssl_data(std::shared_ptr<relay_data>& buf);
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
-	// remote
-//	void on_ssl_handshake(const boost::system::error_code& error);
-
-//	void on_ssl_connect(const boost::system::error_code& error);
-//	void local_ssl_handshake(const boost::system::error_code& error);
-//	void start_ssl_connect();
 
 };
+
+inline void throw_err_msg(const std::string &msg)
+{
+	throw(boost::system::system_error(boost::system::error_code(), msg));
+}
 
 #endif
