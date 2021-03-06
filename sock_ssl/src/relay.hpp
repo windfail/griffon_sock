@@ -132,10 +132,10 @@ public:
 	raw_relay(asio::io_context *io, const std::shared_ptr<ssl_relay> &manager, uint32_t session = 0) :
 		_session (session), _strand(io->get_executor()), _sock(*io), _host_resolve(*io), _manager(manager), _sock_remote(*io)
 		{
-			BOOST_LOG_TRIVIAL(info) << "raw relay construct: ";
+			BOOST_LOG_TRIVIAL(debug) << "raw relay construct: ";
 		}
 	~raw_relay() {
-		BOOST_LOG_TRIVIAL(info) << "raw relay destruct: "<<_session;
+		BOOST_LOG_TRIVIAL(debug) << "raw relay destruct: "<<_session;
 	}
 	void local_start();
 
@@ -182,11 +182,11 @@ public:
 		_config(config), _gfw(config.gfw_file)
 	{
 
-		BOOST_LOG_TRIVIAL(debug) << "ssl relay construct";
+		BOOST_LOG_TRIVIAL(info) << "ssl relay construct";
 	}
 
 	~ssl_relay()  {
-		BOOST_LOG_TRIVIAL(debug) << "ssl relay destruct";
+		BOOST_LOG_TRIVIAL(info) << "ssl relay destruct";
 	};
 
 	auto & get_strand() {
