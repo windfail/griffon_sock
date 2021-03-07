@@ -30,42 +30,46 @@ ssl_relay::_relay_t::~_relay_t()
 	relay->get_strand().post(stop_raw, asio::get_associated_allocator(stop_raw));
 
 }
-void ssl_relay::timer_handle()
+void ssl_relay::on_ssl_shutdown(const boost::system::error_code& error)
 {
-	BOOST_LOG_TRIVIAL(info) << " ssl relay timer handle : ";
-	for (auto & rel : _relays) {
-		if (--rel.second->timeout == 0) {
-			BOOST_LOG_TRIVIAL(info) << " timeout stop : "<<rel.first;
-			_relays.erase(rel.first);
-		}
-	}
-}
-void on_ssl_shutdown(const boost::system::error_code& error)
-{
-	BOOST_LOG_TRIVIAL(info) << "ssl shutdown over";
+//	BOOST_LOG_TRIVIAL(info) << "ssl shutdown over";
+	boost::system::error_code err;
+	_sock->lowest_layer().shutdown(tcp::socket::shutdown_both, err);
+	_sock->lowest_layer().close(err);
 
+	if (_config.local) {
+//		BOOST_LOG_TRIVIAL(info) << "local destroy ssl sock";
+		_sock = nullptr;
+//		BOOST_LOG_TRIVIAL(info) << "new ssl ctx";
+		auto _ctx = init_ssl(_config);
+//		BOOST_LOG_TRIVIAL(info) << "new ssl sock";
+		_sock = std::make_unique<ssl_socket>(*_io_context, _ctx);
+//		BOOST_LOG_TRIVIAL(info) << "new ssl sock ok";
+	}
+	_ssl_status = NOT_START;
 }
 // if stop cmd is from raw relay, send stop cmd to ssl
 void ssl_relay::stop_ssl_relay(uint32_t session, relay_data::stop_src src)
 {
 	if (src == relay_data::ssl_err) {
 		// stop all raw_relay
-		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay :"<< _relays.size()<<" _relays "<<_bufs.size() <<"bufs ";
+//		BOOST_LOG_TRIVIAL(info) << "ssl stop all relay :"<< _relays.size()<<" _relays "<<_bufs.size() <<"bufs ";
 		_relays.clear();
 		_bufs = std::queue<std::shared_ptr<relay_data>> ();
-		boost::system::error_code err;
-		if (_ssl_status == SSL_START) {
-			_sock->async_shutdown(on_ssl_shutdown);
-		}
-		_sock->lowest_layer().shutdown(tcp::socket::shutdown_both, err);
-		_sock->lowest_layer().close(err);
-		_ssl_status = NOT_START;
 
-		BOOST_LOG_TRIVIAL(info) << "ssl stop over";
-		if (_config.local) {
-			_ctx = init_ssl(_config);
-			_sock = std::make_unique<ssl_socket>(*_io_context, _ctx);
+		if (_ssl_status == SSL_START) {
+			_sock->async_shutdown(
+				asio::bind_executor(_strand,
+						    std::bind(&ssl_relay::on_ssl_shutdown, shared_from_this(),
+							      std::placeholders::_1)));
+			_ssl_status = SSL_CLOSED;
+		} else {
+			boost::system::error_code err;
+			_sock->lowest_layer().shutdown(tcp::socket::shutdown_both, err);
+			_sock->lowest_layer().close(err);
+			_ssl_status = NOT_START;
 		}
+//		BOOST_LOG_TRIVIAL(info) << "ssl stop over";
 
 		return;
 	}
@@ -90,6 +94,7 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 	if (_ssl_status == SSL_CLOSED) {
 		return;
 	}
+	_timeout_wr = TIMEOUT;
 	auto relay = _relays.find(buf->session());
 	if (relay == _relays.end()) {
 		return;
@@ -171,6 +176,11 @@ void ssl_relay::ssl_data_send()
 void ssl_relay::do_ssl_data(std::shared_ptr<relay_data>& buf)
 {
 	auto session = buf->session();
+	if (buf->cmd() == relay_data::KEEP_RELAY) {
+		_timeout_kp = TIMEOUT;
+	} else {
+		_timeout_rd = TIMEOUT;
+	}
 	if ( buf->cmd() == relay_data::DATA_RELAY) {
 		auto val = _relays.find(session);
 		if (val == _relays.end() ) { // session stopped, tell remote to STOP
@@ -271,4 +281,20 @@ ssl::context init_ssl(const relay_config &config)
 	ctx.use_certificate_file(config.cert/*"yily.crt"*/, ssl::context::pem);
 	ctx.use_rsa_private_key_file(config.key/*"key.pem"*/, ssl::context::pem);
 	return ctx;
+}
+
+void ssl_relay::timer_handle()
+{
+	if (_ssl_status == NOT_START)
+		return;
+
+	_timeout_rd--;
+	_timeout_wr--;
+//	_timeout_kp--;
+	if (_timeout_rd < 0 && (_timeout_wr < 0 || _timeout_kp < 0)) {
+		// shutdown
+//		BOOST_LOG_TRIVIAL(info) << "ssl timeout: "<< _timeout_rd<< " "<<_timeout_wr<< " "<< _timeout_kp;
+		stop_ssl_relay(0, relay_data::ssl_err);
+	}
+//	BOOST_LOG_TRIVIAL(info) << " ssl relay timer handle : "<< _timeout_rd<< " "<<_timeout_wr<< " "<< _timeout_kp;
 }

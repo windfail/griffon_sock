@@ -23,7 +23,7 @@ namespace ssl = boost::asio::ssl;
 typedef ssl::stream<tcp::socket> ssl_socket;
 
 const int READ_BUFFER_SIZE = 4096;
-const int TIMEOUT =  5;
+const int TIMEOUT = 10;
 
 struct relay_config
 {
@@ -50,7 +50,8 @@ public:
 		STOP_RELAY,
 		START_CONNECT,
 		START_RELAY,
-		DATA_RELAY
+		DATA_RELAY,
+		KEEP_RELAY
 	};
 	enum stop_src {
 		from_ssl,
@@ -178,7 +179,7 @@ public:
 		_sock(std::make_unique<ssl_socket>(*io, _ctx)),
 //		_acceptor(*io()),//, tcp::endpoint(tcp::v4(), config.local_port)),
 		_remote(ip::make_address(config.remote_ip), config.remote_port),
-		_timer(*io), _rand(std::random_device()()),
+		_rand(std::random_device()()),
 		_config(config), _gfw(config.gfw_file)
 	{
 
@@ -223,7 +224,6 @@ private:
 	std::shared_ptr<ssl_socket>  _sock;
 
 	std::unordered_map<uint32_t, std::shared_ptr<_relay_t>> _relays;
-	asio::steady_timer _timer;
 
 	tcp::endpoint _remote;	// remote ssl relay ep
 	std::queue<std::shared_ptr<relay_data>> _bufs; // buffers for write
@@ -232,11 +232,16 @@ private:
 	// random
 	std::minstd_rand _rand;
 
+	int _timeout_rd = TIMEOUT;
+	int _timeout_wr = TIMEOUT;
+	int _timeout_kp = TIMEOUT;
+
 	void ssl_data_send();
 	void ssl_data_read();
 
 	void do_ssl_data(std::shared_ptr<relay_data>& buf);
 	uint32_t add_new_relay(const std::shared_ptr<raw_relay> &relay);
+	void on_ssl_shutdown(const boost::system::error_code& error);
 
 };
 

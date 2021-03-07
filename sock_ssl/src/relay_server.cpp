@@ -3,8 +3,9 @@
 
 void relay_server::local_server_start()
 {
-	asio::spawn([this](asio::yield_context yield) {
+	asio::spawn(_strand, [this](asio::yield_context yield) {
 		auto ssl_ptr = std::make_shared<ssl_relay> (&_io_context, _config);
+		_ssl_relays.emplace_back(ssl_ptr);
 		while (true) {
 			try {
 				auto new_relay = std::make_shared<raw_relay> (&_io_context, ssl_ptr);
@@ -17,22 +18,31 @@ void relay_server::local_server_start()
 		}
 	});
 
-//	_timer.expires_after(std::chrono::minutes(1));
-//	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
-
 }
 
-void relay_server::handle_timer(const boost::system::error_code& err)
+void relay_server::start_timer()
 {
-//	auto ssl_timer = std::bind(&ssl_relay::timer_handle, _ssl_server);
-//	_ssl_server->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
+	asio::spawn(_strand, [this](asio::yield_context yield) {
+		while (true) {
+			_timer.expires_after(std::chrono::seconds(10));
+			_timer.async_wait(yield);
 
-//	_timer.expires_after(std::chrono::minutes(1));
-//	_timer.async_wait(std::bind(&relay_server::handle_timer, this, std::placeholders::_1));
+			for (auto relay = _ssl_relays.begin(); relay != _ssl_relays.end();) {
+				if (auto ssl_relay = relay->lock()) {
+					auto ssl_timer = std::bind(&ssl_relay::timer_handle, ssl_relay);
+					ssl_relay->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
+					relay++;
+				} else {
+					BOOST_LOG_TRIVIAL(info) << " main timer erase ";
+					relay = _ssl_relays.erase(relay);
+				}
+			}
+		}
+	});
 }
 void relay_server::remote_server_start()
 {
-	asio::spawn([this](asio::yield_context yield) {
+	asio::spawn(_strand, [this](asio::yield_context yield) {
 		while (true) {
 			try {
 				auto ssl_ptr = std::make_shared<ssl_relay> (&_io_context, _config);
@@ -40,6 +50,7 @@ void relay_server::remote_server_start()
 //						       std::bind(&relay_server::remote_handle_accept, this, ssl_ptr, std::placeholders::_1));
 				auto task = std::bind(&ssl_relay::ssl_connect_start, ssl_ptr);
 				ssl_ptr->get_strand().post(task, asio::get_associated_allocator(task));
+				_ssl_relays.emplace_back(ssl_ptr);
 
 			} catch (boost::system::system_error& error) {
 				BOOST_LOG_TRIVIAL(error) << "remote accept error: "<<error.what();
@@ -55,6 +66,8 @@ void relay_server::start_server()
 	} else {
 		remote_server_start();
 	}
+	start_timer();
+
 }
 void relay_server::run()
 {
