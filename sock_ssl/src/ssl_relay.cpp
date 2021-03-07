@@ -97,6 +97,7 @@ void ssl_relay::send_data_on_ssl(std::shared_ptr<relay_data> buf)
 	relay->second->timeout = TIMEOUT;
 
 	_bufs.push(buf);
+	BOOST_LOG_TRIVIAL(info) << "send sess"<<buf->session()<<"  on ssl," << _bufs.size()<<"bufs";
 	if (_bufs.size() > 1) {
 		return;
 	}
@@ -158,6 +159,7 @@ void ssl_relay::ssl_data_send()
 					throw(boost::system::system_error(boost::system::error_code(), emsg.str()));
 				}
 				_bufs.pop();
+				BOOST_LOG_TRIVIAL(info) << "ssl send ok, "<<_bufs.size()<<" _bufs lef";
 			}
 		} catch (boost::system::system_error& error) {
 			BOOST_LOG_TRIVIAL(error) << "ssl write error: "<<error.what();
@@ -207,6 +209,7 @@ void ssl_relay::ssl_data_read()
 			while (true) {
 				auto buf = std::make_shared<relay_data>(0);
 				auto len = _sock->async_read_some(buf->header_buffer(), yield);
+				BOOST_LOG_TRIVIAL(info) << "ssl read session "<<buf->session()<<" cmd"<<buf->cmd();
 				if (len != buf->header_buffer().size()
 				    || buf->head()._len > READ_BUFFER_SIZE) {
 					auto emsg = format(
