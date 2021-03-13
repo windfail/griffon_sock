@@ -20,26 +20,6 @@ void relay_server::local_server_start()
 
 }
 
-void relay_server::start_timer()
-{
-	asio::spawn(_strand, [this](asio::yield_context yield) {
-		while (true) {
-			_timer.expires_after(std::chrono::seconds(10));
-			_timer.async_wait(yield);
-
-			for (auto relay = _ssl_relays.begin(); relay != _ssl_relays.end();) {
-				if (auto ssl_relay = relay->lock()) {
-					auto ssl_timer = std::bind(&ssl_relay::timer_handle, ssl_relay);
-					ssl_relay->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
-					relay++;
-				} else {
-					BOOST_LOG_TRIVIAL(info) << " main timer erase ";
-					relay = _ssl_relays.erase(relay);
-				}
-			}
-		}
-	});
-}
 void relay_server::remote_server_start()
 {
 	asio::spawn(_strand, [this](asio::yield_context yield) {
@@ -61,10 +41,10 @@ void relay_server::remote_server_start()
 }
 void relay_server::start_server()
 {
-	if (_config.local) {
-		local_server_start();
-	} else {
+	if (_config.type == REMOTE_SERVER) {
 		remote_server_start();
+	} else {
+		local_server_start();
 	}
 	start_timer();
 
@@ -78,4 +58,25 @@ void relay_server::run()
 	} catch (...) {
 		BOOST_LOG_TRIVIAL(error) << "server run error with unkown exception ";
 	}
+}
+
+void relay_server::start_timer()
+{
+	asio::spawn(_strand, [this](asio::yield_context yield) {
+		while (true) {
+			_timer.expires_after(std::chrono::seconds(10));
+			_timer.async_wait(yield);
+
+			for (auto relay = _ssl_relays.begin(); relay != _ssl_relays.end();) {
+				if (auto ssl_relay = relay->lock()) {
+					auto ssl_timer = std::bind(&ssl_relay::timer_handle, ssl_relay);
+					ssl_relay->get_strand().post(ssl_timer, asio::get_associated_allocator(ssl_timer));
+					relay++;
+				} else {
+					BOOST_LOG_TRIVIAL(info) << " main timer erase ";
+					relay = _ssl_relays.erase(relay);
+				}
+			}
+		}
+	});
 }

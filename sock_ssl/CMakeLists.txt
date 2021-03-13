@@ -11,6 +11,7 @@ SET(CMAKE_BUILD_TYPE "Release")
 #SET(CMAKE_BUILD_TYPE "Debug")
 # Create a sources variable with a link to all cpp files to compile
 set(SOURCES
+  src/util.c
     src/ssl_relay.cpp
     src/raw_relay.cpp
     src/relay_server.cpp

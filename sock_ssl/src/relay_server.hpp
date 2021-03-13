@@ -9,7 +9,7 @@ public:
 		_io_context(),// _ctx(ssl::context::tlsv12_client),
 		_config(config), _strand(_io_context.get_executor()),
 		_acceptor(_io_context, tcp::endpoint(tcp::v4(), config.local_port)),
-		_remote(ip::make_address(config.remote_ip), config.remote_port),_timer(_io_context) {
+		_remote(asio::ip::make_address(config.remote_ip), config.remote_port),_timer(_io_context) {
 	}
 
 	void local_server_start();

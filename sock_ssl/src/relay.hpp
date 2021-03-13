@@ -16,7 +16,7 @@ namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
 namespace asio = boost::asio;
-namespace ip = boost::asio::ip;
+//namespace ip = boost::asio::ip;
 using boost::asio::ip::tcp;
 
 namespace ssl = boost::asio::ssl;
@@ -24,6 +24,11 @@ typedef ssl::stream<tcp::socket> ssl_socket;
 
 const int READ_BUFFER_SIZE = 4096;
 const int TIMEOUT = 10;
+enum server_type {
+	LOCAL_SERVER,
+	REMOTE_SERVER,
+	LOCAL_TRANSPARENT
+};
 
 struct relay_config
 {
@@ -31,7 +36,8 @@ struct relay_config
 	int remote_port = 10230;
 	std::string remote_ip = "";
 	int thread_num = 1;
-	bool local = true;
+//	bool local = true;
+	server_type type = LOCAL_SERVER;
 	std::string cert = "/etc/groxy_ssl/groxy_ssl.crt";
 	std::string key = "/etc/groxy_ssl/groxy_ssl.pem";
 	std::string logfile = "/dev/null";
@@ -139,7 +145,7 @@ public:
 		BOOST_LOG_TRIVIAL(debug) << "raw relay destruct: "<<_session;
 	}
 	void local_start();
-
+	void transparent_start();
 	tcp::socket & get_sock() {return _sock;}
 	auto session() {return _session;}
 	void session(uint32_t id) { _session = id;}
@@ -176,9 +182,10 @@ class ssl_relay
 public:
 	ssl_relay(asio::io_context *io, const relay_config &config) :
 		_io_context(io), _strand(io->get_executor()), _ctx(init_ssl(config)),
-		_sock(std::make_unique<ssl_socket>(*io, _ctx)),
+		//_sock(std::make_unique<ssl_socket>(*io, _ctx)),
+		_sock(*io, _ctx),
 //		_acceptor(*io()),//, tcp::endpoint(tcp::v4(), config.local_port)),
-		_remote(ip::make_address(config.remote_ip), config.remote_port),
+		_remote(asio::ip::make_address(config.remote_ip), config.remote_port),
 		_rand(std::random_device()()),
 		_config(config), _gfw(config.gfw_file)
 	{
@@ -196,7 +203,7 @@ public:
 	void stop_ssl_relay(uint32_t session, relay_data::stop_src src);
 	void send_data_on_ssl(std::shared_ptr<relay_data> buf);
 
-	ssl_socket & get_sock() {return *_sock;}
+	ssl_socket & get_sock() {return _sock;}
 
 	void ssl_connect_start();
 	void local_handle_accept(std::shared_ptr<raw_relay> relay);
@@ -221,7 +228,8 @@ private:
 	ssl::context _ctx;
 	asio::strand<asio::io_context::executor_type> _strand;
 
-	std::shared_ptr<ssl_socket>  _sock;
+	//std::shared_ptr<ssl_socket>  _sock;
+	ssl_socket _sock;
 
 	std::unordered_map<uint32_t, std::shared_ptr<_relay_t>> _relays;
 

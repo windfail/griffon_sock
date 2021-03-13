@@ -118,8 +118,11 @@ int main(int argc, char*argv[])
 			config.thread_num = stoi(value);
 		} else if (key == "port") {
 			config.local_port = stoi(value);
-		} else if (key == "local") {
-			config.local = value == "true";
+		} else if (key == "type") {
+			config.type =
+				value == "local" ? LOCAL_SERVER :
+				value == "remote" ? REMOTE_SERVER:
+				LOCAL_TRANSPARENT;
 		} else if (key == "server") {
 			config.remote_ip = value;
 		} else if (key == "server_port") {
